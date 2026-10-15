@@ -41,13 +41,13 @@ Règles clés : 2D, 6 joueurs max, équipes de 2, 2 vies, "shrink" en fin de tem
 
 ## Plan macro
 
-0. Archéologie : CVS→git, build de l'original (X11) en Docker + noVNC, captures de référence — fait, voir `archeology/README.md` ; reste le dump d'état par frame
-1. Spec extraite : règles, timings, shrink, extras
-2. Moteur TS pur + tests golden vs original
-3. Rendu + clavier local (2 joueurs) + POC netcode 2 navigateurs
-4. Réseau 6 joueurs, équipes, 2 vies, shrink
-5. Convertisseurs assets + niveaux
-6. Polish : son, lobby, déploiement
+0. Archéologie : CVS→git, build de l'original (X11) en Docker + noVNC, runner golden (dump d'état par frame) — **fait** (PR 1), voir `archeology/README.md`
+1. Spec extraite — **remplacée** par une transcription fonction par fonction du C, vérifiée par les tests golden
+2. Moteur TS + tests golden vs original — **fait** (PR 2) : 1188/1188 niveaux identiques (1187 avec touche spéciale)
+3. Rendu + clavier local — **fait** (PR 3) : 2 à 4 joueurs, graphismes et sons d'origine décodés dans le navigateur
+4. Réseau 6 joueurs, équipes, vies, shrink — **fait** (PR 4) : lockstep via serveur Bun, salon, détection de désynchronisation
+5. Convertisseurs assets + niveaux — **remplacé** : fichiers d'origine servis tels quels, décodés côté client
+6. Polish — **à faire** : musique, bots (IA de `bot.c`), autres silhouettes de joueurs, configuration des touches, écran de fin, déploiement
 
 ## Préférences de l'utilisateur
 
