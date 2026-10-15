@@ -1,0 +1,19 @@
+# Original XBlast archives (SourceForge), re-downloadable: see docs/plan.md
+original/
+
+node_modules
+dist
+*.local
+*.log
+.env
+.env.*
+!.env.example
+
+.DS_Store
+.idea
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+
+# AI agent worktrees
+.claude/worktrees/

@@ -1,0 +1,20 @@
+{
+  "name": "@xblast/server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Bun game server: relays inputs between players (lockstep)",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/index.ts",
+    "start": "bun src/index.ts"
+  },
+  "dependencies": {
+    "@xblast/sim": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}

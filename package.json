@@ -1,0 +1,44 @@
+{
+  "name": "xblast-port",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Modern web port of XBlast, the classic multiplayer bomb game",
+  "license": "GPL-2.0-or-later",
+  "workspaces": [
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "preinstall": "node scripts/enforce-bun.cjs",
+    "dev": "vp run @xblast/client#dev",
+    "ready": "vp check && vp run -r test"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite": "catalog:",
+    "vite-plus": "catalog:"
+  },
+  "overrides": {
+    "vite": "catalog:"
+  },
+  "devEngines": {
+    "packageManager": {
+      "name": "bun",
+      "version": "1.4.3",
+      "onFail": "error"
+    },
+    "runtime": {
+      "name": "node",
+      "version": "24.22.0",
+      "onFail": "download"
+    }
+  },
+  "packageManager": "bun@1.4.3",
+  "catalog": {
+    "@types/bun": "1.4.2",
+    "typescript": "7.0.2",
+    "vite": "npm:@voidzero-dev/vite-plus-core@1.1.0",
+    "vite-plus": "1.1.0"
+  },
+  "trustedDependencies": []
+}

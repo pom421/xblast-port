@@ -1,0 +1,18 @@
+{
+  "name": "@xblast/sim",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pure, deterministic game simulation shared by client and server",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "typescript": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
