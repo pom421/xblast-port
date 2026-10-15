@@ -6,7 +6,59 @@
     <title>XBlast</title>
   </head>
   <body>
-    <canvas id="game" width="480" height="416"></canvas>
+    <header>
+      <h1>XBlast</h1>
+      <div id="hud"></div>
+    </header>
+    <main>
+      <div id="board">
+        <canvas id="game"></canvas>
+        <div id="timebar"><div id="time"></div></div>
+        <div id="overlay" hidden></div>
+        <form id="setup" hidden>
+          <h2>New match</h2>
+          <label
+            >Players
+            <select name="players">
+              <option>2</option>
+              <option>3</option>
+              <option>4</option>
+            </select></label
+          >
+          <label
+            >Lives
+            <select name="lives">
+              <option>1</option>
+              <option selected>2</option>
+              <option>3</option>
+            </select></label
+          >
+          <label
+            >Victories to win
+            <select name="wins">
+              <option>1</option>
+              <option>2</option>
+              <option selected>3</option>
+              <option>5</option>
+              <option>9</option>
+            </select></label
+          >
+          <label><input type="checkbox" name="teams" id="teams" /> Teams of 2 (4 players)</label>
+          <label
+            >Level
+            <select name="level" id="level">
+              <option value="random">Random</option>
+            </select></label
+          >
+          <ul id="controls"></ul>
+          <button type="submit">Start</button>
+          <p class="small">Escape: back to this menu.</p>
+        </form>
+      </div>
+    </main>
+    <footer>
+      Port of <a href="https://sourceforge.net/projects/xblast/">XBlast TNT 2.10.4</a> — GPL-2.0-or-later.
+    </footer>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
