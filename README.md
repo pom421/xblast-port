@@ -41,7 +41,8 @@ the same places on AZERTY and QWERTY keyboards):
 Releasing a direction stops the player (the original `useStopKey=false`
 option). Escape goes back to the menu. Graphics are the original files
 (`assets/image`, Debian `xblast-tnt-images`/`-models`), decoded and recolored in
-the browser like the original did. No sound yet, no network play yet.
+the browser like the original did, with its sound effects (`assets/sounds`).
+No music yet, no network play yet.
 
 ## Layout
 

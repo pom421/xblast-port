@@ -13,6 +13,7 @@ import {
 } from "./assets.ts";
 import { KeyboardInput, keyBindings } from "./input.ts";
 import { HEIGHT, WIDTH, render, type Scene } from "./render.ts";
+import { SoundPlayer } from "./sound.ts";
 import "./style.css";
 
 const FRAME_MS = 1000 / FRAME_RATE;
@@ -49,6 +50,7 @@ const timeBar = $<HTMLDivElement>("#time");
 let levels: LevelEntry[] = [];
 let common: Awaited<ReturnType<typeof loadCommon>>;
 let input: KeyboardInput;
+let sound: SoundPlayer | null = null;
 
 let settings: MatchSettings;
 let scene: Scene | null = null;
@@ -114,6 +116,7 @@ function endRound(): void {
       if (teamOf(i) === winnerTeam) victories[i]!++;
     }
     message = `${teamName(winnerTeam)} ${settings.teams ? "win" : "wins"}`;
+    sound?.play("won", WIDTH / 2);
   }
   const champion = victories.findIndex((v) => v >= settings.wins);
   if (champion >= 0) {
@@ -157,6 +160,7 @@ function tick(): void {
       const actions: PlayerAction[] = input.take().slice(0, settings.players);
       game.turn();
       game.evalActions(actions);
+      for (const s of game.sounds) sound?.play(s.name, s.x);
       render(ctx, game, scene);
       game.endFrame();
       timeBar.style.width = `${100 * (1 - game.gameTime / GAME_TIME)}%`;
@@ -196,6 +200,11 @@ async function startMatch(): Promise<void> {
   };
   setupForm.hidden = true;
   showOverlay("<p>Loading…</p>");
+  if (!sound) {
+    // started from the "Start" click: browsers allow audio after a user gesture
+    sound = new SoundPlayer();
+    await sound.load();
+  }
   scene = {
     blocks: [],
     common,
