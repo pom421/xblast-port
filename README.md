@@ -31,6 +31,21 @@ vp run dev   # client dev server
 `sim` has no DOM or Bun types, and lint forbids `Math.random`, `Date.now`
 and timers in it: all players must compute exactly the same game.
 
+## Fidelity: golden tests
+
+`packages/sim` is a function-by-function transcription of the C code of XBlast
+2.10.4 (`map.c`, `bomb.c`, `player.c`, `func.c`, `shrink.c`, `scramble.c`,
+`game.c`), including its random generator. The original, run headless in
+Docker, records games frame by frame (`archeology/README.md`), and the tests
+replay them: the state must be identical at every frame.
+
+- `packages/sim/test/golden/`: 20 recorded games, run by `vp run -r test`.
+- `archeology/sweep.sh` then `node packages/sim/test/sweep.ts`: one game on each
+  of the 1188 levels; all identical except one edge case of the C code
+  (undefined behaviour, see `archeology/README.md`).
+
+`assets/levels/` holds the 1188 level files of XBlast (Debian `xblast-tnt-levels`).
+
 ## License
 
 GPL-2.0-or-later, like the original XBlast code and assets this port is
