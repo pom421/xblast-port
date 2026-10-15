@@ -19,7 +19,7 @@ test("players join, the first one hosts and starts a round", () => {
   const { room, inbox } = setup(2);
   room.receive(1, { type: "join", names: ["Olaf", "Alex"] });
   room.receive(2, { type: "join", names: ["Harald"] });
-  expect(of(inbox[1]!, "welcome")[0]).toEqual({ type: "welcome", client: 2, slots: [2] });
+  expect(of(inbox[1]!, "welcome").at(-1)).toEqual({ type: "welcome", client: 2, slots: [2] });
   const lobby = of(inbox[1]!, "lobby").at(-1)!;
   expect(lobby.players.map((p) => p.name)).toEqual(["Olaf", "Alex", "Harald"]);
   expect(lobby.host).toBe(1);
