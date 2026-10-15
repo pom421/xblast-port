@@ -40,6 +40,34 @@ The volume keeps config and recorded demos between runs. No sound.
   seeded by `SeedRandom(seed)` then 100 warm-up draws. Beware: building with
   `DEBUG_RANDOM` switches to a different LCG generator.
 - **Demos** (`demo.c`, `game_demo.c`): a recorded game is the seed, the level
-  and the actions of every player at each frame. Replaying a demo is
-  deterministic: this is the basis of the golden tests (next step: dump the
-  game state at each frame during replay).
+  and the actions of every player at each frame.
+
+## Golden games
+
+The image also contains `xblast-golden`, the original with a headless mode
+(`archeology/original/golden/golden.c`): it plays games with "monkey" players
+(pseudo-random inputs from their own generator, so the game random generator
+only serves the rules) and writes the whole state at each frame, as JSON Lines.
+The TypeScript engine must give exactly the same states
+(`packages/sim/test/golden.test.ts`).
+
+```bash
+# one game per level (1188), in original/sweep/, then replay them all in TypeScript
+archeology/sweep.sh [bombPerMille] [specialPerMille]
+node packages/sim/test/sweep.ts
+```
+
+Protocol of a game: `SeedRandom (seed)`, `ConfigLevel`, then for each frame
+`GameTurn`, dump, inputs (`GameEvalAction`), `GameUpdateWindow`. The intro
+screens of the real game also draw random numbers: they are not part of it.
+
+Result (2.10.4, 6 players): 1188/1188 levels identical, and 1187/1188 when
+players also use the special key. The last one, `FullPowerRingOFire`, has an
+explosion going out of the maze: the C code then reads memory outside of the
+`maze` array (undefined behaviour), which the port does not emulate.
+
+Other scripts:
+
+- `gen-shrinkdata.py`: converts `shrinkdat.h` into `packages/sim/src/shrinkdata.ts`.
+- Some levels crash the original when many levels run in one process: the
+  sweep runs each level in its own process.
