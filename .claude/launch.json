@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "client",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        ". ~/.config/vite-plus/env && cd packages/client && vp dev --port ${PORT:-5173} --strictPort"
+      ],
+      "port": 5173
+    }
+  ]
+}
