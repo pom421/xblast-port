@@ -56,6 +56,7 @@ function bot(index: number): Promise<string> {
 
     socket.addEventListener("open", () => send({ type: "join", names: [`Bot ${index + 1}`] }));
     socket.addEventListener("error", () => reject(new Error(`bot ${index}: connection failed`)));
+    socket.addEventListener("close", () => reject(new Error(`bot ${index}: connection closed after ${rounds} rounds`)));
     socket.addEventListener("message", (e) => {
       const m = JSON.parse(String(e.data)) as ServerMessage;
       switch (m.type) {
@@ -104,6 +105,8 @@ function bot(index: number): Promise<string> {
   });
 }
 
+const started = Date.now();
 const results = await Promise.all(Array.from({ length: count }, (_, i) => bot(i)));
+console.log(`match played in ${Math.round((Date.now() - started) / 1000)} s`);
 for (const line of results) console.log(line);
 process.exit(results.some((r) => !r.includes(" 0 desync")) ? 1 : 0);

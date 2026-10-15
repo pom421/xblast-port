@@ -63,6 +63,7 @@ export class Room {
 
   connect(connection: Connection): void {
     this.clients.set(connection.id, connection);
+    connection.send({ type: "welcome", client: connection.id, slots: [] });
     connection.send(this.lobby());
   }
 

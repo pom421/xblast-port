@@ -302,7 +302,9 @@ export class Game {
       look: id,
       ...options.carry?.[id],
     }));
-    this.numActive = this.players.length;
+    // active teams, like the network game of the original (remainingTeams);
+    // its local game counted players, so team games could not end before the time
+    this.numActive = new Set(this.players.map((p) => p.team)).size;
     /* ConfigLevel */
     this.configLevelPlayers();
     this.shrinkSteps = this.configLevelShrink();

@@ -58,6 +58,12 @@ interface LocalMatch {
 interface OnlineMatch {
   mode: "online";
   socket: WebSocket;
+  /** names of the players on this computer */
+  names: string[];
+  /** a join request is waiting for its answer */
+  joinPending: boolean;
+  /** title of the lobby screen: the winner of the last match */
+  title: string;
   client: number;
   lobby: LobbyPlayer[];
   host: number;
@@ -283,6 +289,9 @@ function connectOnline(): void {
   const online: OnlineMatch = {
     mode: "online",
     socket,
+    names,
+    joinPending: true,
+    title: "Lobby",
     client: -1,
     lobby: [],
     host: -1,
@@ -331,10 +340,17 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       online.lobby = message.players;
       online.host = message.host;
       online.playing = message.playing;
-      if (phase.kind === "lobby") showLobby(online);
+      if (mySlots(online).length > 0) online.joinPending = false;
+      // arrived during a match: join once it is over
+      if (!message.playing && !online.joinPending && mySlots(online).length === 0) {
+        online.joinPending = true;
+        send(online, { type: "join", names: online.names });
+      }
+      if (phase.kind === "lobby") showLobby(online, undefined, online.title);
       break;
     case "error":
-      if (phase.kind === "lobby") showLobby(online, message.message);
+      online.joinPending = false;
+      if (phase.kind === "lobby") showLobby(online, message.message, online.title);
       break;
     case "match":
       roster = { names: message.players.map((p) => p.name), config: message.config };
@@ -364,7 +380,8 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       victories = message.victories;
       updateHud();
       phase = { kind: "lobby" };
-      showLobby(online, undefined, championMessage() ?? "Match over");
+      online.title = championMessage() ?? "Match over";
+      showLobby(online, undefined, online.title);
       break;
   }
 }
