@@ -17,3 +17,6 @@ dist
 
 # AI agent worktrees
 .claude/worktrees/
+
+# Golden fixtures (a global gitignore may exclude *.gz)
+!packages/sim/test/golden/*.gz
