@@ -9,6 +9,12 @@
         ". ~/.config/vite-plus/env && cd packages/client && vp dev --port ${PORT:-5173} --strictPort"
       ],
       "port": 5173
+    },
+    {
+      "name": "server",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", ". ~/.config/vite-plus/env && cd packages/server && bun --watch src/index.ts"],
+      "port": 3001
     }
   ]
 }
