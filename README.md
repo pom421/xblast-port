@@ -49,7 +49,8 @@ abandon the round, quit to the menu). When every keyboard player is out, Enter
 plays the rest of the round at once: the computer players still decide who wins. Graphics
 are the original files (`assets/image`, Debian `xblast-tnt-images`/`-models`),
 decoded and recolored in the browser like the original did, with its sound
-effects (`assets/sounds`). No music yet.
+effects (`assets/sounds`) and its 6 songs (`assets/music`, one per round; M
+turns the music off and on).
 
 ## Play on a LAN (up to 6 players)
 

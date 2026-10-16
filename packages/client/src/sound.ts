@@ -1,6 +1,7 @@
-// Sound effects of the original (sdl_sound.c): raw unsigned 8 bit samples at
-// 22050 Hz, mono or interleaved stereo. Mono sounds are panned with the x
-// position of their source; a new play of a sound stops the previous one.
+// Sound effects and music of the original (sdl_sound.c): raw unsigned 8 bit
+// samples at 22050 Hz, mono or interleaved stereo. Mono sounds are panned with
+// the x position of their source; a new play of a sound stops the previous one.
+// Songs (assets/music) play in a loop during a round, like the original.
 
 import { PIXW } from "@xblast/sim";
 
@@ -63,17 +64,57 @@ export class SoundPlayer {
     await Promise.all(
       Object.entries(sounds).map(async ([name, [file, mono]]) => {
         const response = await fetch(`${import.meta.env.BASE_URL}sounds/${file}.raw`);
-        const raw = new Uint8Array(await response.arrayBuffer());
-        const channels = mono ? 1 : 2;
-        const length = Math.floor(raw.length / channels);
-        const buffer = this.context.createBuffer(channels, length, SAMPLE_RATE);
-        for (let c = 0; c < channels; c++) {
-          const data = buffer.getChannelData(c);
-          for (let i = 0; i < length; i++) data[i] = (raw[i * channels + c]! - 128) / 128;
-        }
-        this.buffers.set(name, buffer);
+        this.buffers.set(name, this.decode(new Uint8Array(await response.arrayBuffer()), mono ? 1 : 2));
       }),
     );
+  }
+
+  private readonly music: GainNode = this.musicGain();
+  private song: AudioBufferSourceNode | null = null;
+  private readonly songs = new Map<number, Promise<AudioBuffer>>();
+  musicOn = true;
+
+  private musicGain(): GainNode {
+    const gain = this.context.createGain();
+    gain.gain.value = 0.35;
+    gain.connect(this.context.destination);
+    return gain;
+  }
+
+  /** Plays song 1 to 6 of the original (xbsng*.raw, stereo) in a loop. */
+  async playMusic(n: number): Promise<void> {
+    this.stopMusic();
+    if (!this.musicOn) return;
+    let song = this.songs.get(n);
+    if (!song) {
+      song = fetch(`${import.meta.env.BASE_URL}music/xbsng${n}.raw`)
+        .then((r) => r.arrayBuffer())
+        .then((data) => this.decode(new Uint8Array(data), 2));
+      this.songs.set(n, song);
+    }
+    const buffer = await song;
+    this.stopMusic();
+    const source = this.context.createBufferSource();
+    source.buffer = buffer;
+    source.loop = true;
+    source.connect(this.music);
+    source.start();
+    this.song = source;
+  }
+
+  stopMusic(): void {
+    this.song?.stop();
+    this.song = null;
+  }
+
+  private decode(raw: Uint8Array, channels: number): AudioBuffer {
+    const length = Math.floor(raw.length / channels);
+    const buffer = this.context.createBuffer(channels, length, SAMPLE_RATE);
+    for (let c = 0; c < channels; c++) {
+      const data = buffer.getChannelData(c);
+      for (let i = 0; i < length; i++) data[i] = (raw[i * channels + c]! - 128) / 128;
+    }
+    return buffer;
   }
 
   play(name: string, x: number): void {

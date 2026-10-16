@@ -217,6 +217,7 @@ function tick(): void {
         phase = { kind: "play" };
         showOverlay(null);
         input.take();
+        startMusic();
       }
       break;
     case "play":
@@ -307,6 +308,7 @@ function fastForward(): void {
 
 function finishLocalRound(abandoned = false): void {
   banner.hidden = true;
+  sound?.stopMusic();
   if (abandoned) {
     phase = { kind: "result", frames: RESULT_FRAMES };
     showOverlay("<h2>Round abandoned</h2>");
@@ -471,6 +473,7 @@ function tickOnline(online: OnlineMatch): void {
   if (game!.over) {
     const { winnerTeam } = game!.result();
     send(online, { type: "over", round: online.round, frame, hash: hashGame(game!), winnerTeam });
+    sound?.stopMusic();
     phase = { kind: "waiting" };
   }
 }
@@ -553,8 +556,24 @@ function pauseAction(action: string): void {
   }
 }
 
+/** Music of the round: the chosen song, or one at random (setting kept in the browser). */
+function startMusic(): void {
+  const choice = $<HTMLSelectElement>("#music").value;
+  if (!sound || choice === "off") return;
+  const song = choice === "random" ? 1 + Math.floor(Math.random() * 6) : Number(choice);
+  void sound.playMusic(song);
+}
+
+function toggleMusic(): void {
+  if (!sound) return;
+  sound.musicOn = !sound.musicOn;
+  if (!sound.musicOn) sound.stopMusic();
+  else if (phase.kind === "play") startMusic();
+}
+
 function backToMenu(): void {
   banner.hidden = true;
+  sound?.stopMusic();
   if (match?.mode === "online") {
     const online = match;
     match = null;
@@ -604,6 +623,19 @@ async function init(): Promise<void> {
   const select = $<HTMLSelectElement>("#level");
   for (const level of levels) select.add(new Option(`${level.name} (${level.file})`, level.file));
   $<HTMLInputElement>("#server").placeholder = defaultServer();
+  const music = $<HTMLSelectElement>("#music");
+  try {
+    music.value = localStorage.getItem("xblast.music") ?? "random";
+  } catch {
+    // storage disabled: default choice
+  }
+  music.addEventListener("change", () => {
+    try {
+      localStorage.setItem("xblast.music", music.value);
+    } catch {
+      // storage disabled: the choice lasts for this page only
+    }
+  });
   input = new KeyboardInput(settings);
   cards = playerCards(
     $("#players"),
@@ -656,6 +688,9 @@ async function init(): Promise<void> {
       e.preventDefault();
       fastForward();
       return;
+    }
+    if (e.code === "KeyM" && phase.kind !== "menu" && !settings.some((p) => Object.values(p.keys).includes("KeyM"))) {
+      toggleMusic();
     }
     if (e.code === "Escape" && phase.kind !== "menu") backToMenu();
     if (e.code === "Enter" && phase.kind === "over" && local) void startLocal();
