@@ -41,7 +41,7 @@ Règles clés : 2D, 6 joueurs max, équipes de 2, 2 vies, "shrink" en fin de tem
 
 ## Plan macro
 
-0. Archéologie : CVS→git, build de l'original (SDL) en Docker, captures de référence
+0. Archéologie : CVS→git, build de l'original (X11) en Docker + noVNC, captures de référence — fait, voir `archeology/README.md` ; reste le dump d'état par frame
 1. Spec extraite : règles, timings, shrink, extras
 2. Moteur TS pur + tests golden vs original
 3. Rendu + clavier local (2 joueurs) + POC netcode 2 navigateurs
