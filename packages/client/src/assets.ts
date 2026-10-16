@@ -114,6 +114,14 @@ export async function loadPlayer(look: PlayerLook): Promise<PlayerSprites> {
   return { frames, masks };
 }
 
+/** One standing frame of a player look, for the settings preview. */
+export async function loadPreview(look: PlayerLook): Promise<Sprite> {
+  const colors: Color5[] = [...look.colors.map(parseColor), [31, 31, 31]];
+  const base = `image/sprite/${look.shape}_D_S`;
+  const [epm, pbm] = await Promise.all([file(`${base}.epm`), file(`${base}.pbm`)]);
+  return toCanvas(recolorSprite(readEpm(epm), colors, readPbm(pbm)));
+}
+
 export interface CommonSprites {
   /** [normal, mini][anime 0..16] */
   bombs: Sprite[][];

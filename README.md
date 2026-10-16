@@ -29,21 +29,25 @@ vp run dev   # then open the URL printed by Vite
 
 1 to 4 players on one keyboard, against computer players if you like (the AI
 of the original, `bot.c`), 1 to 3 lives, teams of 2 with 4 or 6 players, a match
-of several random levels (or a chosen one). Controls (physical keys, so
-the same places on AZERTY and QWERTY keyboards):
+of several random levels (or a chosen one).
 
-| Player | Move              | Bomb  | Special     |
-| ------ | ----------------- | ----- | ----------- |
-| Olaf   | Z Q S D (W A S D) | Space | left Shift  |
-| Alex   | arrows            | Enter | right Shift |
-| Harald | I J K L           | U     | O           |
-| Rodi   | numpad 8 4 5 6    | 0     | .           |
+Each player of the keyboard chooses a name, one of the 20 shapes of the
+original, its 6 colors and its keys (click a key, then press the new one); the
+settings stay in the browser. Default keys (physical keys, same places on AZERTY
+and QWERTY keyboards):
 
-Releasing a direction stops the player (the original `useStopKey=false`
-option). Escape goes back to the menu. Graphics are the original files
-(`assets/image`, Debian `xblast-tnt-images`/`-models`), decoded and recolored in
-the browser like the original did, with its sound effects (`assets/sounds`).
-No music yet.
+| Player | Move           | Bomb     | Stop       | Special  |
+| ------ | -------------- | -------- | ---------- | -------- |
+| 1      | arrows         | Space    | left Shift | Tab      |
+| 2      | Z Q S D        | F        | E          | R        |
+| 3      | I J K L        | H        | U          | O        |
+| 4      | numpad 8 4 2 6 | numpad 0 | numpad 5   | numpad . |
+
+Like the original, a player keeps walking until the stop key; "Releasing a
+direction stops" changes that per player. Escape goes back to the menu. Graphics
+are the original files (`assets/image`, Debian `xblast-tnt-images`/`-models`),
+decoded and recolored in the browser like the original did, with its sound
+effects (`assets/sounds`). No music yet.
 
 ## Play on a LAN (up to 6 players)
 

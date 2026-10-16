@@ -18,9 +18,17 @@ export interface MatchConfig {
   bots?: number;
 }
 
+/** Look of a player: one of the 20 shapes and its 6 colors ("#rrggbb", helmet first). */
+export interface PlayerLookData {
+  shape: string;
+  colors: [string, string, string, string, string, string];
+}
+
 export interface LobbyPlayer {
   slot: number;
   name: string;
+  /** chosen look; default look of the slot when missing */
+  look?: PlayerLookData;
   /** connection that controls this player (-1 for a computer player) */
   client: number;
   /** computer player: every client computes its inputs */
@@ -29,7 +37,7 @@ export interface LobbyPlayer {
 
 /* client → server */
 export type ClientMessage =
-  | { type: "join"; names: string[] }
+  | { type: "join"; players: ({ name: string } & Partial<PlayerLookData>)[] }
   | { type: "start"; config: MatchConfig }
   | { type: "input"; round: number; frame: number; actions: NetAction[] }
   | { type: "over"; round: number; frame: number; hash: number; winnerTeam: number | null };
