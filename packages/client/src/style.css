@@ -251,3 +251,20 @@ input {
 kbd {
   color: var(--accent);
 }
+
+#banner {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  padding: 6px 16px;
+  background: rgb(0 0 0 / 0.75);
+  border: 1px solid var(--accent);
+  cursor: pointer;
+}
+
+.menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
