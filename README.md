@@ -20,13 +20,37 @@ vp run -r test
 vp run dev   # client dev server
 ```
 
+## Play (local, one keyboard)
+
+```bash
+vp install
+vp run dev   # then open the URL printed by Vite
+```
+
+2 to 4 players on one keyboard, 1 to 3 lives, teams of 2 with 4 players, a
+match of several random levels (or a chosen one). Controls (physical keys, so
+the same places on AZERTY and QWERTY keyboards):
+
+| Player | Move              | Bomb  | Special     |
+| ------ | ----------------- | ----- | ----------- |
+| Olaf   | Z Q S D (W A S D) | Space | left Shift  |
+| Alex   | arrows            | Enter | right Shift |
+| Harald | I J K L           | U     | O           |
+| Rodi   | numpad 8 4 5 6    | 0     | .           |
+
+Releasing a direction stops the player (the original `useStopKey=false`
+option). Escape goes back to the menu. Graphics are the original files
+(`assets/image`, Debian `xblast-tnt-images`/`-models`), decoded and recolored in
+the browser like the original did, with its sound effects (`assets/sounds`).
+No music yet, no network play yet.
+
 ## Layout
 
-| Package           | Runs in    | Role                                                 |
-| ----------------- | ---------- | ---------------------------------------------------- |
-| `packages/sim`    | everywhere | Pure deterministic simulation (integers, seeded RNG) |
-| `packages/client` | browser    | Canvas2D rendering, keyboard input                   |
-| `packages/server` | Bun        | Relays player inputs (lockstep)                      |
+| Package           | Runs in    | Role                                                  |
+| ----------------- | ---------- | ----------------------------------------------------- |
+| `packages/sim`    | everywhere | Pure deterministic simulation (integers, seeded RNG)  |
+| `packages/client` | browser    | Canvas2D rendering of the original graphics, keyboard |
+| `packages/server` | Bun        | Relays player inputs (lockstep)                       |
 
 `sim` has no DOM or Bun types, and lint forbids `Math.random`, `Date.now`
 and timers in it: all players must compute exactly the same game.
