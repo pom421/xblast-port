@@ -5,6 +5,7 @@
 export * from "./constants.ts";
 export { Game, type Explosion, type GameOptions, type Player, type PlayerAction, type PlayerSetup } from "./game.ts";
 export { LevelError, parseLevel, type BlockGraphic, type Level } from "./level.ts";
+export * from "./net.ts";
 export { GameRandom } from "./rng.ts";
 
 /** Bumped whenever a change makes the simulation diverge from earlier versions. */
