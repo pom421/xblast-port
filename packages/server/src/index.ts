@@ -3,8 +3,8 @@
 // (build the client first: vp run @xblast/client#build). PORT: default 3001.
 
 import { join, normalize } from "node:path";
-import type { ClientMessage } from "@xblast/sim";
-import { Room, type LevelChoice } from "./room.ts";
+import type { ClientMessage, LevelChoice } from "@xblast/sim";
+import { Room } from "./room.ts";
 
 const clientDir = join(import.meta.dir, "../../client/dist");
 const assetsDir = join(import.meta.dir, "../../../assets");

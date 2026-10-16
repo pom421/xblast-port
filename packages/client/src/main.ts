@@ -5,6 +5,7 @@
 import {
   FRAME_RATE,
   GAME_TIME,
+  chooseLevel,
   Game,
   hashGame,
   parseLevel,
@@ -211,7 +212,11 @@ function tick(): void {
       else tickOnline(match);
       break;
     case "result":
-      if (--phase.frames <= 0 && match.mode === "local") void nextLocalRound(match);
+      if (--phase.frames <= 0 && match.mode === "local") {
+        // loading the next level takes several frames: start it only once
+        phase = { kind: "waiting" };
+        void nextLocalRound(match);
+      }
       break;
     default:
       break;
@@ -248,8 +253,7 @@ async function startLocal(): Promise<void> {
 
 async function nextLocalRound(local: LocalMatch): Promise<void> {
   const n = roster.names.length;
-  const candidates = levels.filter((l) => l.players >= n && (!roster.config.teams || l.gameMode & (1 << 7)));
-  const file = local.level === "random" ? candidates[Math.floor(Math.random() * candidates.length)]!.file : local.level;
+  const file = local.level === "random" ? chooseLevel(levels, n, roster.config.teams, Math.random).file : local.level;
   local.round++;
   await beginRound(file, (local.seed + local.round) >>> 0);
 }
@@ -307,7 +311,13 @@ function connectOnline(): void {
   let queue = Promise.resolve();
   socket.addEventListener("message", (e) => {
     const message = JSON.parse(String(e.data)) as ServerMessage;
-    queue = queue.then(() => onServer(online, message));
+    // a failed message (e.g. a level that does not load) must not block the next ones
+    queue = queue
+      .then(() => onServer(online, message))
+      .catch((error: unknown) => {
+        console.error(error);
+        showOverlay(`<h2>Error</h2><p>${escapeHtml(String(error))}</p><p>Escape: menu.</p>`);
+      });
   });
   socket.addEventListener("close", () => {
     if (match === online) {
@@ -504,7 +514,10 @@ async function init(): Promise<void> {
   requestAnimationFrame(loop);
 }
 
-void init();
+init().catch((error: unknown) => {
+  console.error(error);
+  showOverlay(`<h2>Loading failed</h2><p>${escapeHtml(String(error))}</p>`);
+});
 
 // dev only: drive the game without requestAnimationFrame (hidden tabs, tests)
 if (import.meta.env.DEV) {

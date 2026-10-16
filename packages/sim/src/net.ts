@@ -3,7 +3,7 @@
 // deterministic simulation. The server relays inputs, frame by frame, once it
 // has the inputs of every player for that frame.
 
-import type { Dir } from "./constants.ts";
+import { MAZE_H, MAZE_W, type Dir } from "./constants.ts";
 import type { Game } from "./game.ts";
 
 /** Inputs of one player for one frame: direction (Dir.Default: unchanged), bomb, special. */
@@ -46,6 +46,31 @@ export function teamOfSlot(slot: number, config: MatchConfig): number {
   return config.teams ? Math.floor(slot / 2) : slot;
 }
 
+/** A level of assets/levels/index.json. */
+export interface LevelChoice {
+  file: string;
+  players: number;
+  gameMode: number;
+}
+
+/**
+ * Random level for a match: one allowing this many players (and teams, gameMode
+ * "T"). Falls back to levels for this many players, then to any level, rather
+ * than failing when the filter leaves nothing.
+ */
+export function chooseLevel(
+  levels: readonly LevelChoice[],
+  players: number,
+  teams: boolean,
+  random: () => number,
+): LevelChoice {
+  const forPlayers = levels.filter((l) => l.players >= players);
+  const forTeams = teams ? forPlayers.filter((l) => l.gameMode & (1 << 7)) : forPlayers;
+  const candidates = [forTeams, forPlayers, levels].find((list) => list.length > 0);
+  if (!candidates) throw new Error("no level available");
+  return candidates[Math.floor(random() * candidates.length)]!;
+}
+
 /** Default inputs: nothing pressed. */
 export const idleAction = (): NetAction => [5, 0, 0];
 
@@ -68,8 +93,8 @@ export function hashGame(game: Game): number {
   for (let e = game.exploList; e !== null; e = e.next) {
     for (const v of [e.x, e.y, e.dx, e.dy, e.count, e.range, e.type]) mix(v);
   }
-  for (let x = 0; x < 15; x++) {
-    for (let y = 0; y < 13; y++) mix(game.mazeAt(x, y));
+  for (let x = 0; x < MAZE_W; x++) {
+    for (let y = 0; y < MAZE_H; y++) mix(game.mazeAt(x, y));
   }
   const [i97, j97] = game.rng.state();
   mix(i97);
