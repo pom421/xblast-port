@@ -54,7 +54,7 @@ function bot(index: number): Promise<string> {
       }
     }
 
-    socket.addEventListener("open", () => send({ type: "join", names: [`Bot ${index + 1}`] }));
+    socket.addEventListener("open", () => send({ type: "join", players: [{ name: `Bot ${index + 1}` }] }));
     socket.addEventListener("error", () => reject(new Error(`bot ${index}: connection failed`)));
     socket.addEventListener("close", () => reject(new Error(`bot ${index}: connection closed after ${rounds} rounds`)));
     socket.addEventListener("message", (e) => {

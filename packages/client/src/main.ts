@@ -1,7 +1,6 @@
 // XBlast in the browser: local matches (1 to 4 players on one keyboard, plus
 // computer players) and online matches (up to 6 players, lockstep through the
-// server). The
-// simulation runs at the original rate (20 frames per second).
+// server). The simulation runs at the original rate (20 frames per second).
 
 import {
   FRAME_RATE,
@@ -25,8 +24,11 @@ import {
   loadLevelText,
   loadPlayer,
   type LevelEntry,
+  type PlayerLook,
 } from "./assets.ts";
-import { KeyboardInput, keyBindings } from "./input.ts";
+import { KeyboardInput } from "./input.ts";
+import { playerCards, type PlayerCards } from "./player-cards.ts";
+import { keyLabel, loadKeyboardLayout, loadSettings, type PlayerSettings } from "./settings.ts";
 import { HEIGHT, WIDTH, render, type Scene } from "./render.ts";
 import { SoundPlayer } from "./sound.ts";
 import "./style.css";
@@ -47,6 +49,8 @@ type Phase =
 /** Players of the match, by slot. */
 interface Roster {
   names: string[];
+  /** shape and colors */
+  looks: PlayerLook[];
   /** computer players */
   bots: boolean[];
   config: MatchConfig;
@@ -62,8 +66,8 @@ interface LocalMatch {
 interface OnlineMatch {
   mode: "online";
   socket: WebSocket;
-  /** names of the players on this computer */
-  names: string[];
+  /** players of this computer */
+  locals: PlayerSettings[];
   /** a join request is waiting for its answer */
   joinPending: boolean;
   /** title of the lobby screen: the winner of the last match */
@@ -95,9 +99,12 @@ let levels: LevelEntry[] = [];
 let common: Awaited<ReturnType<typeof loadCommon>>;
 let input: KeyboardInput;
 let sound: SoundPlayer | null = null;
+/** settings of the players of this computer */
+const settings = loadSettings();
+let cards: PlayerCards;
 
 let match: LocalMatch | OnlineMatch | null = null;
-let roster: Roster = { names: [], bots: [], config: { lives: 2, wins: 3, teams: false } };
+let roster: Roster = { names: [], looks: [], bots: [], config: { lives: 2, wins: 3, teams: false } };
 let scene: Scene | null = null;
 let game: Game | null = null;
 let phase: Phase = { kind: "menu" };
@@ -129,7 +136,7 @@ function updateHud(): void {
   }
   hud.innerHTML = game.players
     .map((p, slot) => {
-      const look = defaultPlayers[slot]!;
+      const look = roster.looks[slot] ?? defaultPlayers[slot]!;
       const lives = Math.max(0, p.dying ? p.lives - 1 : p.lives);
       const team = roster.config.teams ? ` <span class="team">team ${teamOf(slot) + 1}</span>` : "";
       const color = look.colors[2] === "#000000" ? look.colors[3] : look.colors[2];
@@ -151,7 +158,7 @@ async function loadScene(): Promise<void> {
   scene = {
     blocks: [],
     common,
-    players: await Promise.all(defaultPlayers.slice(0, roster.names.length).map(loadPlayer)),
+    players: await Promise.all(roster.looks.map(loadPlayer)),
   };
 }
 
@@ -235,8 +242,12 @@ async function startLocal(): Promise<void> {
   const humans = Number(data.get("players"));
   const bots = Math.min(6 - humans, Number(data.get("bots")));
   const players = humans + bots;
+  // keyboard players first, then computer players with the default looks
+  const looks = Array.from({ length: players }, (_, slot) => (slot < humans ? settings[slot]! : defaultPlayers[slot]!));
+  input.setBindings(settings.slice(0, humans));
   roster = {
-    names: defaultPlayers.slice(0, players).map((p, slot) => (slot < humans ? p.name : `${p.name} (CPU)`)),
+    names: looks.map((look, slot) => (slot < humans ? look.name : `${look.name} (CPU)`)),
+    looks: looks.map(({ name, shape, colors }) => ({ name, shape, colors })),
     bots: Array.from({ length: players }, (_, slot) => slot >= humans),
     config: {
       lives: Number(data.get("lives")),
@@ -292,7 +303,8 @@ function connectOnline(): void {
     const value = data.get(name);
     return typeof value === "string" ? value.trim() : "";
   };
-  const names = ["name1", "name2"].slice(0, Number(data.get("local"))).map((n) => text(n) || "Player");
+  const locals = settings.slice(0, Number(data.get("local")));
+  input.setBindings(locals);
   const url = text("server") || defaultServer();
   setupForm.hidden = true;
   showOverlay("<p>Connecting…</p>");
@@ -300,7 +312,7 @@ function connectOnline(): void {
   const online: OnlineMatch = {
     mode: "online",
     socket,
-    names,
+    locals,
     joinPending: true,
     title: "Lobby",
     client: -1,
@@ -313,7 +325,7 @@ function connectOnline(): void {
   };
   match = online;
   phase = { kind: "lobby" };
-  socket.addEventListener("open", () => send(online, { type: "join", names }));
+  socket.addEventListener("open", () => sendJoin(online));
   // one message at a time: a round must not start before the match is loaded
   let queue = Promise.resolve();
   socket.addEventListener("message", (e) => {
@@ -331,6 +343,13 @@ function connectOnline(): void {
       backToMenu();
       showOverlay("<h2>Disconnected</h2><p>Escape: menu.</p>");
     }
+  });
+}
+
+function sendJoin(online: OnlineMatch): void {
+  send(online, {
+    type: "join",
+    players: online.locals.map(({ name, shape, colors }) => ({ name, shape, colors })),
   });
 }
 
@@ -361,7 +380,7 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       // arrived during a match: join once it is over
       if (!message.playing && !online.joinPending && mySlots(online).length === 0) {
         online.joinPending = true;
-        send(online, { type: "join", names: online.names });
+        sendJoin(online);
       }
       if (phase.kind === "lobby") showLobby(online, undefined, online.title);
       break;
@@ -372,6 +391,7 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
     case "match":
       roster = {
         names: message.players.map((p) => p.name),
+        looks: message.players.map((p) => ({ name: p.name, ...(p.look ?? defaultPlayers[p.slot]!) })),
         bots: message.players.map((p) => !!p.bot),
         config: message.config,
       };
@@ -440,7 +460,7 @@ function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
     `<h2>${escapeHtml(title)}</h2><ol class="lobby">${players}</ol>` +
       (online.playing ? "<p>A match is being played.</p>" : hostForm) +
       (error ? `<p class="error">${escapeHtml(error)}</p>` : "") +
-      `<p class="small">${mySlots(online).length > 1 ? "Your players use the first two key sets." : "Your keys: Z Q S D, Space, left Shift."} Escape: leave.</p>`,
+      `<p class="small">Your keys: ${online.locals.map((s) => `${escapeHtml(s.name)}: ${keysText(s)}`).join(" — ")}. Escape: leave.</p>`,
   );
   overlay.querySelector<HTMLFormElement>("#host-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
@@ -475,6 +495,11 @@ function backToMenu(): void {
   setupForm.hidden = false;
 }
 
+function keysText(s: PlayerSettings): string {
+  const k = s.keys;
+  return `${[k.up, k.left, k.down, k.right].map(keyLabel).join(" ")}, bomb ${keyLabel(k.bomb)}, stop ${keyLabel(k.stop)}, special ${keyLabel(k.special)}`;
+}
+
 function updateForm(): void {
   const data = new FormData(setupForm);
   const online = data.get("mode") === "online";
@@ -482,12 +507,8 @@ function updateForm(): void {
     el.hidden = el.dataset.mode !== data.get("mode");
   const players = online ? Number(data.get("local")) : Number(data.get("players"));
   const total = online ? players : players + Math.min(6 - players, Number(data.get("bots")));
-  $("#controls").innerHTML = keyBindings
-    .slice(0, players)
-    .map((b, i) => `<li><strong>${online ? `Player ${i + 1}` : defaultPlayers[i]!.name}</strong>: ${b.label}</li>`)
-    .join("");
+  cards.show(players);
   $<HTMLInputElement>("#teams").disabled = online || total < 4 || total % 2 !== 0;
-  $<HTMLInputElement>("#name2").disabled = Number(data.get("local")) < 2;
   $<HTMLButtonElement>("#start").textContent = online ? "Connect" : "Start";
 }
 
@@ -506,11 +527,17 @@ function loop(now: number): void {
 
 async function init(): Promise<void> {
   showOverlay("<p>Loading…</p>");
-  [levels, common] = await Promise.all([loadLevelIndex(), loadCommon()]);
+  [levels, common] = await Promise.all([loadLevelIndex(), loadCommon(), loadKeyboardLayout()]);
   const select = $<HTMLSelectElement>("#level");
   for (const level of levels) select.add(new Option(`${level.name} (${level.file})`, level.file));
   $<HTMLInputElement>("#server").placeholder = defaultServer();
-  input = new KeyboardInput(keyBindings);
+  input = new KeyboardInput(settings);
+  cards = playerCards(
+    $("#players"),
+    settings,
+    () => input.setBindings(settings),
+    (capturing) => (input.capturing = capturing),
+  );
   setupForm.addEventListener("change", updateForm);
   setupForm.addEventListener("submit", (e) => {
     e.preventDefault();

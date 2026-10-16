@@ -17,8 +17,8 @@ const of = <T extends ServerMessage["type"]>(messages: ServerMessage[], type: T)
 
 test("players join, the first one hosts and starts a round", () => {
   const { room, inbox } = setup(2);
-  room.receive(1, { type: "join", names: ["Olaf", "Alex"] });
-  room.receive(2, { type: "join", names: ["Harald"] });
+  room.receive(1, { type: "join", players: [{ name: "Olaf" }, { name: "Alex" }] });
+  room.receive(2, { type: "join", players: [{ name: "Harald" }] });
   expect(of(inbox[1]!, "welcome").at(-1)).toEqual({ type: "welcome", client: 2, slots: [2] });
   const lobby = of(inbox[1]!, "lobby").at(-1)!;
   expect(lobby.players.map((p) => p.name)).toEqual(["Olaf", "Alex", "Harald"]);
@@ -34,8 +34,8 @@ test("players join, the first one hosts and starts a round", () => {
 
 test("a frame is sent once every player sent its inputs", () => {
   const { room, inbox } = setup(2);
-  room.receive(1, { type: "join", names: ["Olaf"] });
-  room.receive(2, { type: "join", names: ["Alex"] });
+  room.receive(1, { type: "join", players: [{ name: "Olaf" }] });
+  room.receive(2, { type: "join", players: [{ name: "Alex" }] });
   room.receive(1, { type: "start", config: { lives: 2, wins: 3, teams: false } });
   room.receive(1, { type: "input", round: 1, frame: 4, actions: [[1, 1, 0]] });
   expect(of(inbox[0]!, "frame").map((f) => f.frame)).toEqual([1, 2, 3]);
@@ -60,8 +60,8 @@ test("a frame is sent once every player sent its inputs", () => {
 
 test("round results count victories, detect desyncs, end the match", () => {
   const { room, inbox, scheduled } = setup(2);
-  room.receive(1, { type: "join", names: ["Olaf"] });
-  room.receive(2, { type: "join", names: ["Alex"] });
+  room.receive(1, { type: "join", players: [{ name: "Olaf" }] });
+  room.receive(2, { type: "join", players: [{ name: "Alex" }] });
   room.receive(1, { type: "start", config: { lives: 1, wins: 2, teams: false } });
   room.receive(1, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 1 });
   expect(of(inbox[0]!, "result")).toHaveLength(0);
@@ -77,7 +77,7 @@ test("round results count victories, detect desyncs, end the match", () => {
 
 test("the host can add computer players, removed at the end of the match", () => {
   const { room, inbox } = setup(1);
-  room.receive(1, { type: "join", names: ["Olaf"] });
+  room.receive(1, { type: "join", players: [{ name: "Olaf" }] });
   room.receive(1, { type: "start", config: { lives: 1, wins: 1, teams: true, bots: 3 } });
   const match = of(inbox[0]!, "match")[0]!;
   expect(match.players.map((p) => [p.name, p.bot ?? false])).toEqual([

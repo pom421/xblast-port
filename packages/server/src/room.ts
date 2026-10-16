@@ -11,6 +11,7 @@ import {
   type LobbyPlayer,
   type MatchConfig,
   type NetAction,
+  type PlayerLookData,
   type ServerMessage,
 } from "@xblast/sim";
 
@@ -79,7 +80,7 @@ export class Room {
   receive(id: number, message: ClientMessage): void {
     switch (message.type) {
       case "join":
-        this.join(id, message.names);
+        this.join(id, Array.isArray(message.players) ? message.players : []);
         break;
       case "start":
         this.start(id, message.config);
@@ -96,17 +97,18 @@ export class Room {
     }
   }
 
-  private join(id: number, names: string[]): void {
+  private join(id: number, joining: ({ name: string } & Partial<PlayerLookData>)[]): void {
     const client = this.clients.get(id);
     if (!client) return;
     if (this.playing) return client.send({ type: "error", message: "A match is being played, wait for its end." });
     if (this.players.some((p) => p.client === id)) return client.send({ type: "error", message: "Already joined." });
     const free = MAX_PLAYERS - this.players.length;
-    const wanted = names.slice(0, Math.max(0, free)).map((n) => n.trim().slice(0, 16) || "Player");
+    const wanted = joining.slice(0, Math.max(0, free));
     if (wanted.length === 0) return client.send({ type: "error", message: "The game is full (6 players)." });
-    const slots = wanted.map((name) => {
+    const slots = wanted.map((p) => {
       const slot = this.players.length;
-      this.players.push({ slot, name, client: id });
+      const name = (typeof p.name === "string" ? p.name.trim().slice(0, 16) : "") || "Player";
+      this.players.push({ slot, name, client: id, look: sanitizeLook(p) });
       return slot;
     });
     this.host ??= id;
@@ -228,6 +230,16 @@ export class Room {
   private broadcast(message: ServerMessage): void {
     for (const client of this.clients.values()) client.send(message);
   }
+}
+
+/** A look sent by a client: one of the known shapes and 6 colors, else none. */
+function sanitizeLook(p: Partial<PlayerLookData>): PlayerLookData | undefined {
+  const shapes = ["normal", "tall", "girl", "fat", "cowboy", "felix", "golem", "iceman", "insect", "jedi"];
+  const more = ["kenny", "mecha", "ping", "punk", "skull", "sticky", "tutorial", "wuschel", "wusel", "xmas"];
+  if (typeof p.shape !== "string" || ![...shapes, ...more].includes(p.shape)) return undefined;
+  if (!Array.isArray(p.colors) || p.colors.length !== 6) return undefined;
+  if (!p.colors.every((c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c))) return undefined;
+  return { shape: p.shape, colors: p.colors };
 }
 
 function sanitize(action: NetAction | undefined): NetAction {

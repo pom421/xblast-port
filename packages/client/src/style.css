@@ -123,6 +123,10 @@ main {
 
 #setup {
   background: rgb(17 19 24 / 0.92);
+  /* the player settings may not fit over the board: scroll */
+  justify-content: flex-start;
+  overflow-y: auto;
+  padding: 16px 0;
 }
 
 #setup label {
@@ -190,4 +194,60 @@ footer a {
 
 input {
   font: inherit;
+}
+
+.cards {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  gap: 8px;
+  border: 1px solid #333;
+  background: var(--panel);
+  text-align: left;
+}
+
+.card-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.preview {
+  image-rendering: pixelated;
+  align-self: center;
+}
+
+.colors {
+  display: flex;
+  gap: 2px;
+}
+
+.colors input {
+  width: 28px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(4, auto);
+  gap: 2px;
+}
+
+.keys button,
+[data-reset] {
+  font-size: 0.75rem;
+  padding: 2px 6px;
+  background: #2a2f3a;
+  color: var(--text);
+}
+
+kbd {
+  color: var(--accent);
 }
