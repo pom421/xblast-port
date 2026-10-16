@@ -27,8 +27,9 @@ vp install
 vp run dev   # then open the URL printed by Vite
 ```
 
-2 to 4 players on one keyboard, 1 to 3 lives, teams of 2 with 4 players, a
-match of several random levels (or a chosen one). Controls (physical keys, so
+1 to 4 players on one keyboard, against computer players if you like (the AI
+of the original, `bot.c`), 1 to 3 lives, teams of 2 with 4 or 6 players, a match
+of several random levels (or a chosen one). Controls (physical keys, so
 the same places on AZERTY and QWERTY keyboards):
 
 | Player | Move              | Bomb  | Special     |
@@ -55,7 +56,8 @@ bun packages/server/src/index.ts   # PORT=3001 by default
 
 Every player opens `http://<host address>:3001`, chooses **Online**, 1 or 2
 players on their computer, and connects. The first one to join hosts the match
-(lives, victories to win, teams of 2) and starts it.
+(lives, victories to win, computer players, teams of 2) and starts it.
+Computer players cost no network traffic: every client computes their inputs.
 
 How it works: the simulation is deterministic, so clients only exchange their
 inputs (lockstep). Each input is used 3 frames (150 ms) after it is sent; the

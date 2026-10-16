@@ -116,16 +116,22 @@ export class Room {
 
   private start(id: number, config: MatchConfig): void {
     if (id !== this.host || this.playing) return;
-    if (this.players.length < 2) {
-      this.clients.get(id)?.send({ type: "error", message: "At least 2 players are needed." });
+    const bots = Math.min(MAX_PLAYERS - this.players.length, Math.max(0, Math.trunc(config.bots ?? 0)));
+    if (this.players.length + bots < 2) {
+      this.clients.get(id)?.send({ type: "error", message: "At least 2 players are needed (computer players count)." });
       return;
     }
+    for (let i = 0; i < bots; i++) {
+      this.players.push({ slot: this.players.length, name: `Computer ${i + 1}`, client: -1, bot: true });
+    }
+    const total = this.players.length;
     // teams of 2 need an even number of players, at least 4
-    const teams = config.teams && this.players.length >= 4 && this.players.length % 2 === 0;
+    const teams = config.teams && total >= 4 && total % 2 === 0;
     this.config = {
       lives: Math.min(9, Math.max(1, Math.trunc(config.lives))),
       wins: Math.min(9, Math.max(1, Math.trunc(config.wins))),
       teams,
+      bots,
     };
     this.playing = true;
     this.round = 0;
