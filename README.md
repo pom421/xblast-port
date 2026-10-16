@@ -42,15 +42,38 @@ Releasing a direction stops the player (the original `useStopKey=false`
 option). Escape goes back to the menu. Graphics are the original files
 (`assets/image`, Debian `xblast-tnt-images`/`-models`), decoded and recolored in
 the browser like the original did, with its sound effects (`assets/sounds`).
-No music yet, no network play yet.
+No music yet.
+
+## Play on a LAN (up to 6 players)
+
+One computer hosts the game: it serves the client and relays the inputs.
+
+```bash
+vp run @xblast/client#build
+bun packages/server/src/index.ts   # PORT=3001 by default
+```
+
+Every player opens `http://<host address>:3001`, chooses **Online**, 1 or 2
+players on their computer, and connects. The first one to join hosts the match
+(lives, victories to win, teams of 2) and starts it.
+
+How it works: the simulation is deterministic, so clients only exchange their
+inputs (lockstep). Each input is used 3 frames (150 ms) after it is sent; the
+server sends a frame to everyone once it has the inputs of every player, and
+compares a hash of the game state at the end of each round to detect a
+desynchronisation. In development, run `vp run @xblast/server#dev` next to
+`vp run dev` (Vite forwards `/ws` to the server).
+
+`bun packages/server/test/bots.ts [bots]` plays a whole match with headless bots
+against a running server.
 
 ## Layout
 
-| Package           | Runs in    | Role                                                  |
-| ----------------- | ---------- | ----------------------------------------------------- |
-| `packages/sim`    | everywhere | Pure deterministic simulation (integers, seeded RNG)  |
-| `packages/client` | browser    | Canvas2D rendering of the original graphics, keyboard |
-| `packages/server` | Bun        | Relays player inputs (lockstep)                       |
+| Package           | Runs in    | Role                                                    |
+| ----------------- | ---------- | ------------------------------------------------------- |
+| `packages/sim`    | everywhere | Pure deterministic simulation (integers, seeded RNG)    |
+| `packages/client` | browser    | Canvas2D rendering of the original graphics, keyboard   |
+| `packages/server` | Bun        | LAN server: serves the client, relays inputs (lockstep) |
 
 `sim` has no DOM or Bun types, and lint forbids `Math.random`, `Date.now`
 and timers in it: all players must compute exactly the same game.

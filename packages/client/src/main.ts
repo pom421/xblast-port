@@ -1,7 +1,20 @@
-// Local game: 2 to 4 players on one keyboard, a match of several levels.
-// The simulation runs at the original rate (20 frames per second).
+// XBlast in the browser: local matches (2 to 4 players on one keyboard) and
+// online matches (up to 6 players, lockstep through the server). The
+// simulation runs at the original rate (20 frames per second).
 
-import { FRAME_RATE, GAME_TIME, Game, parseLevel, type Level, type PlayerAction } from "@xblast/sim";
+import {
+  FRAME_RATE,
+  GAME_TIME,
+  Game,
+  hashGame,
+  parseLevel,
+  teamOfSlot,
+  type LobbyPlayer,
+  type MatchConfig,
+  type NetAction,
+  type PlayerAction,
+  type ServerMessage,
+} from "@xblast/sim";
 import {
   defaultPlayers,
   loadBlocks,
@@ -20,19 +33,46 @@ const FRAME_MS = 1000 / FRAME_RATE;
 const INTRO_FRAMES = 2 * FRAME_RATE;
 const RESULT_FRAMES = 3 * FRAME_RATE;
 
-interface MatchSettings {
-  players: number;
-  lives: number;
-  wins: number;
-  teams: boolean;
-  level: string;
-}
-
 type Phase =
+  | { kind: "menu" }
+  | { kind: "lobby" }
   | { kind: "intro"; frames: number }
   | { kind: "play" }
-  | { kind: "result"; frames: number; message: string }
-  | { kind: "over"; message: string };
+  | { kind: "result"; frames: number }
+  | { kind: "waiting" }
+  | { kind: "over" };
+
+/** Players of the match, by slot. */
+interface Roster {
+  names: string[];
+  config: MatchConfig;
+}
+
+interface LocalMatch {
+  mode: "local";
+  level: string;
+  round: number;
+  seed: number;
+}
+
+interface OnlineMatch {
+  mode: "online";
+  socket: WebSocket;
+  /** names of the players on this computer */
+  names: string[];
+  /** a join request is waiting for its answer */
+  joinPending: boolean;
+  /** title of the lobby screen: the winner of the last match */
+  title: string;
+  client: number;
+  lobby: LobbyPlayer[];
+  host: number;
+  playing: boolean;
+  round: number;
+  delay: number;
+  /** inputs of every player, by frame, received from the server */
+  frames: Map<number, NetAction[]>;
+}
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
 
@@ -52,24 +92,19 @@ let common: Awaited<ReturnType<typeof loadCommon>>;
 let input: KeyboardInput;
 let sound: SoundPlayer | null = null;
 
-let settings: MatchSettings;
+let match: LocalMatch | OnlineMatch | null = null;
+let roster: Roster = { names: [], config: { lives: 2, wins: 3, teams: false } };
 let scene: Scene | null = null;
 let game: Game | null = null;
-let phase: Phase = { kind: "over", message: "" };
+let phase: Phase = { kind: "menu" };
 let victories: number[] = [];
-let round = 0;
-let matchSeed = 0;
 
-function teamOf(player: number): number {
-  return settings.teams ? player % 2 : player;
-}
+/* ------------------------------------------------------------------ */
+/* display                                                            */
+/* ------------------------------------------------------------------ */
 
-function teamName(team: number): string {
-  if (!settings.teams) return defaultPlayers[team]!.name;
-  return Array.from({ length: settings.players }, (_, i) => i)
-    .filter((i) => teamOf(i) === team)
-    .map((i) => defaultPlayers[i]!.name)
-    .join(" & ");
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 }
 
 function showOverlay(html: string | null): void {
@@ -77,77 +112,92 @@ function showOverlay(html: string | null): void {
   if (html !== null) overlay.innerHTML = html;
 }
 
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
+const teamOf = (slot: number) => teamOfSlot(slot, roster.config);
+
+function teamName(team: number): string {
+  return roster.names.filter((_, slot) => teamOf(slot) === team).join(" & ");
 }
 
-async function startRound(): Promise<void> {
-  const candidates = levels.filter((l) => l.players >= settings.players && (!settings.teams || l.gameMode & (1 << 7)));
-  const entry =
-    settings.level === "random"
-      ? candidates[Math.floor(Math.random() * candidates.length)]!
-      : levels.find((l) => l.file === settings.level)!;
-  const level: Level = parseLevel(await loadLevelText(entry.file));
-  const blocks = await loadBlocks(level);
-  scene = { blocks, common, players: scene?.players ?? [] };
+function updateHud(): void {
+  if (!game) {
+    hud.innerHTML = "";
+    return;
+  }
+  hud.innerHTML = game.players
+    .map((p, slot) => {
+      const look = defaultPlayers[slot]!;
+      const lives = Math.max(0, p.dying ? p.lives - 1 : p.lives);
+      const team = roster.config.teams ? ` <span class="team">team ${teamOf(slot) + 1}</span>` : "";
+      const color = look.colors[2] === "#000000" ? look.colors[3] : look.colors[2];
+      return (
+        `<div class="player${lives ? "" : " out"}" style="--color: ${color}">` +
+        `<span class="name">${escapeHtml(roster.names[slot] ?? look.name)}</span>${team}` +
+        `<span class="lives" title="lives">${"♥".repeat(lives)}</span>` +
+        `<span class="wins" title="victories">${"★".repeat(victories[slot] ?? 0)}</span></div>`
+      );
+    })
+    .join("");
+}
+
+/* ------------------------------------------------------------------ */
+/* rounds                                                             */
+/* ------------------------------------------------------------------ */
+
+async function loadScene(): Promise<void> {
+  scene = {
+    blocks: [],
+    common,
+    players: await Promise.all(defaultPlayers.slice(0, roster.names.length).map(loadPlayer)),
+  };
+}
+
+async function beginRound(levelFile: string, seed: number): Promise<void> {
+  const level = parseLevel(await loadLevelText(levelFile));
+  scene = { ...scene!, blocks: await loadBlocks(level) };
   game = new Game({
     level,
-    seed: (matchSeed + round) >>> 0,
-    lives: settings.lives,
-    players: Array.from({ length: settings.players }, (_, i) => ({ team: teamOf(i) })),
+    seed,
+    lives: roster.config.lives,
+    players: roster.names.map((_, slot) => ({ team: teamOf(slot) })),
   });
-  round++;
   phase = { kind: "intro", frames: INTRO_FRAMES };
   showOverlay(
     `<h2>${escapeHtml(level.name)}</h2><p class="author">${escapeHtml(level.author)}</p>` +
       `<p class="hint">${escapeHtml(level.hint)}</p>`,
   );
   render(ctx, game, scene);
+  timeBar.style.width = "100%";
   updateHud();
 }
 
-function endRound(): void {
+function roundMessage(): string {
   const { winnerTeam, outOfTime } = game!.result();
-  let message: string;
-  if (winnerTeam === null) {
-    message = outOfTime ? "Out of time" : "Draw game";
-  } else {
-    for (let i = 0; i < settings.players; i++) {
-      if (teamOf(i) === winnerTeam) victories[i]!++;
-    }
-    message = `${teamName(winnerTeam)} ${settings.teams ? "win" : "wins"}`;
-    sound?.play("won", WIDTH / 2);
-  }
-  const champion = victories.findIndex((v) => v >= settings.wins);
-  if (champion >= 0) {
-    phase = { kind: "over", message: `${teamName(teamOf(champion))} won the match!` };
-    showOverlay(`<h2>${escapeHtml(phase.message)}</h2><p>Press Enter to play again, Escape for the menu.</p>`);
-  } else {
-    phase = { kind: "result", frames: RESULT_FRAMES, message };
-    showOverlay(`<h2>${escapeHtml(message)}</h2>`);
-  }
-  updateHud();
+  if (winnerTeam === null) return outOfTime ? "Out of time" : "Draw game";
+  sound?.play("won", WIDTH / 2);
+  return `${teamName(winnerTeam)} ${roster.config.teams ? "win" : "wins"}`;
 }
 
-function updateHud(): void {
-  if (!game) return;
-  hud.innerHTML = game.players
-    .map((p, i) => {
-      const look = defaultPlayers[i]!;
-      const lives = Math.max(0, p.dying ? p.lives - 1 : p.lives);
-      const team = settings.teams ? ` <span class="team">team ${teamOf(i) + 1}</span>` : "";
-      return (
-        `<div class="player${lives ? "" : " out"}" style="--color: ${look.colors[2] === "#000000" ? look.colors[3] : look.colors[2]}">` +
-        `<span class="name">${look.name}</span>${team}` +
-        `<span class="lives" title="lives">${"♥".repeat(lives)}</span>` +
-        `<span class="wins" title="victories">${"★".repeat(victories[i]!)}</span></div>`
-      );
-    })
-    .join("");
+function championMessage(): string | null {
+  const champion = victories.findIndex((v) => v >= roster.config.wins);
+  return champion < 0 ? null : `${teamName(teamOf(champion))} won the match!`;
 }
+
+/** One frame of the game, with the inputs of every player. */
+function playFrame(actions: PlayerAction[]): void {
+  game!.turn();
+  game!.evalActions(actions);
+  for (const s of game!.sounds) sound?.play(s.name, s.x);
+  render(ctx, game!, scene!);
+  game!.endFrame();
+  timeBar.style.width = `${100 * (1 - game!.gameTime / GAME_TIME)}%`;
+  if (game!.gameTime % 5 === 0) updateHud();
+}
+
+const toAction = ([dir, bomb, special]: NetAction): PlayerAction => ({ dir, bomb: !!bomb, special: !!special });
+const toNet = (a: PlayerAction): NetAction => [a.dir, a.bomb ? 1 : 0, a.special ? 1 : 0];
 
 function tick(): void {
-  if (!game || !scene) return;
+  if (!game || !scene || !match) return;
   switch (phase.kind) {
     case "intro":
       if (--phase.frames <= 0) {
@@ -156,24 +206,261 @@ function tick(): void {
         input.take();
       }
       break;
-    case "play": {
-      const actions: PlayerAction[] = input.take().slice(0, settings.players);
-      game.turn();
-      game.evalActions(actions);
-      for (const s of game.sounds) sound?.play(s.name, s.x);
-      render(ctx, game, scene);
-      game.endFrame();
-      timeBar.style.width = `${100 * (1 - game.gameTime / GAME_TIME)}%`;
-      if (game.gameTime % 5 === 0) updateHud();
-      if (game.over) endRound();
+    case "play":
+      if (match.mode === "local") tickLocal();
+      else tickOnline(match);
       break;
-    }
     case "result":
-      if (--phase.frames <= 0) void startRound();
+      if (--phase.frames <= 0 && match.mode === "local") void nextLocalRound(match);
       break;
-    case "over":
+    default:
       break;
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* local match                                                        */
+/* ------------------------------------------------------------------ */
+
+async function startLocal(): Promise<void> {
+  const data = new FormData(setupForm);
+  const players = Number(data.get("players"));
+  roster = {
+    names: defaultPlayers.slice(0, players).map((p) => p.name),
+    config: {
+      lives: Number(data.get("lives")),
+      wins: Number(data.get("wins")),
+      teams: data.get("teams") === "on" && players >= 4 && players % 2 === 0,
+    },
+  };
+  match = {
+    mode: "local",
+    level: (data.get("level") as string | null) ?? "random",
+    round: 0,
+    seed: crypto.getRandomValues(new Uint32Array(1))[0]!,
+  };
+  victories = roster.names.map(() => 0);
+  setupForm.hidden = true;
+  showOverlay("<p>Loading…</p>");
+  await loadScene();
+  await nextLocalRound(match);
+}
+
+async function nextLocalRound(local: LocalMatch): Promise<void> {
+  const n = roster.names.length;
+  const candidates = levels.filter((l) => l.players >= n && (!roster.config.teams || l.gameMode & (1 << 7)));
+  const file = local.level === "random" ? candidates[Math.floor(Math.random() * candidates.length)]!.file : local.level;
+  local.round++;
+  await beginRound(file, (local.seed + local.round) >>> 0);
+}
+
+function tickLocal(): void {
+  playFrame(input.take().slice(0, roster.names.length));
+  if (!game!.over) return;
+  const { winnerTeam } = game!.result();
+  if (winnerTeam !== null) roster.names.forEach((_, slot) => teamOf(slot) === winnerTeam && victories[slot]!++);
+  const message = roundMessage();
+  const champion = championMessage();
+  updateHud();
+  if (champion) {
+    phase = { kind: "over" };
+    showOverlay(`<h2>${escapeHtml(champion)}</h2><p>Enter: play again. Escape: menu.</p>`);
+  } else {
+    phase = { kind: "result", frames: RESULT_FRAMES };
+    showOverlay(`<h2>${escapeHtml(message)}</h2>`);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* online match                                                       */
+/* ------------------------------------------------------------------ */
+
+function connectOnline(): void {
+  const data = new FormData(setupForm);
+  const text = (name: string) => {
+    const value = data.get(name);
+    return typeof value === "string" ? value.trim() : "";
+  };
+  const names = ["name1", "name2"].slice(0, Number(data.get("local"))).map((n) => text(n) || "Player");
+  const url = text("server") || defaultServer();
+  setupForm.hidden = true;
+  showOverlay("<p>Connecting…</p>");
+  const socket = new WebSocket(url);
+  const online: OnlineMatch = {
+    mode: "online",
+    socket,
+    names,
+    joinPending: true,
+    title: "Lobby",
+    client: -1,
+    lobby: [],
+    host: -1,
+    playing: false,
+    round: 0,
+    delay: 3,
+    frames: new Map(),
+  };
+  match = online;
+  phase = { kind: "lobby" };
+  socket.addEventListener("open", () => send(online, { type: "join", names }));
+  // one message at a time: a round must not start before the match is loaded
+  let queue = Promise.resolve();
+  socket.addEventListener("message", (e) => {
+    const message = JSON.parse(String(e.data)) as ServerMessage;
+    queue = queue.then(() => onServer(online, message));
+  });
+  socket.addEventListener("close", () => {
+    if (match === online) {
+      backToMenu();
+      showOverlay("<h2>Disconnected</h2><p>Escape: menu.</p>");
+    }
+  });
+}
+
+function defaultServer(): string {
+  return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+}
+
+function send(online: OnlineMatch, message: object): void {
+  if (online.socket.readyState === WebSocket.OPEN) online.socket.send(JSON.stringify(message));
+}
+
+/** Slots played on this computer, in slot order. */
+function mySlots(online: OnlineMatch): number[] {
+  return online.lobby.filter((p) => p.client === online.client).map((p) => p.slot);
+}
+
+async function onServer(online: OnlineMatch, message: ServerMessage): Promise<void> {
+  if (match !== online) return;
+  switch (message.type) {
+    case "welcome":
+      online.client = message.client;
+      break;
+    case "lobby":
+      online.lobby = message.players;
+      online.host = message.host;
+      online.playing = message.playing;
+      if (mySlots(online).length > 0) online.joinPending = false;
+      // arrived during a match: join once it is over
+      if (!message.playing && !online.joinPending && mySlots(online).length === 0) {
+        online.joinPending = true;
+        send(online, { type: "join", names: online.names });
+      }
+      if (phase.kind === "lobby") showLobby(online, undefined, online.title);
+      break;
+    case "error":
+      online.joinPending = false;
+      if (phase.kind === "lobby") showLobby(online, message.message, online.title);
+      break;
+    case "match":
+      roster = { names: message.players.map((p) => p.name), config: message.config };
+      online.lobby = message.players;
+      victories = roster.names.map(() => 0);
+      showOverlay("<p>Loading…</p>");
+      await loadScene();
+      break;
+    case "round":
+      online.round = message.round;
+      online.delay = message.delay;
+      online.frames = new Map();
+      await beginRound(message.level, message.seed);
+      break;
+    case "frame":
+      if (message.round === online.round) online.frames.set(message.frame, message.actions);
+      break;
+    case "result": {
+      victories = message.victories;
+      const text = roundMessage();
+      updateHud();
+      phase = { kind: "result", frames: RESULT_FRAMES };
+      showOverlay(`<h2>${escapeHtml(text)}</h2>${message.desync ? '<p class="error">Desynchronised game!</p>' : ""}`);
+      break;
+    }
+    case "matchOver":
+      victories = message.victories;
+      updateHud();
+      phase = { kind: "lobby" };
+      online.title = championMessage() ?? "Match over";
+      showLobby(online, undefined, online.title);
+      break;
+  }
+}
+
+function tickOnline(online: OnlineMatch): void {
+  const frame = game!.gameTime + 1;
+  const actions = online.frames.get(frame);
+  if (!actions) return; // lockstep: wait for the inputs of every player
+  online.frames.delete(frame);
+  const local = input.take().slice(0, mySlots(online).length).map(toNet);
+  send(online, { type: "input", round: online.round, frame: frame + online.delay, actions: local });
+  playFrame(actions.map(toAction));
+  if (game!.over) {
+    const { winnerTeam } = game!.result();
+    send(online, { type: "over", round: online.round, frame, hash: hashGame(game!), winnerTeam });
+    phase = { kind: "waiting" };
+  }
+}
+
+function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
+  const isHost = online.host === online.client;
+  const players = online.lobby
+    .map((p) => `<li>${escapeHtml(p.name)}${p.client === online.client ? " (you)" : ""}</li>`)
+    .join("");
+  const hostForm = isHost
+    ? `<form id="host-form">
+        <label>Lives <select name="lives"><option>1</option><option selected>2</option><option>3</option></select></label>
+        <label>Victories to win <select name="wins"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label>
+        <label><input type="checkbox" name="teams" /> Teams of 2</label>
+        <button type="submit">Start the match</button>
+      </form>`
+    : `<p>Waiting for the host to start…</p>`;
+  showOverlay(
+    `<h2>${escapeHtml(title)}</h2><ol class="lobby">${players}</ol>` +
+      (online.playing ? "<p>A match is being played.</p>" : hostForm) +
+      (error ? `<p class="error">${escapeHtml(error)}</p>` : "") +
+      `<p class="small">${mySlots(online).length > 1 ? "Your players use the first two key sets." : "Your keys: Z Q S D, Space, left Shift."} Escape: leave.</p>`,
+  );
+  overlay.querySelector<HTMLFormElement>("#host-form")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const data = new FormData(e.target as HTMLFormElement);
+    send(online, {
+      type: "start",
+      config: { lives: Number(data.get("lives")), wins: Number(data.get("wins")), teams: data.get("teams") === "on" },
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* menu and loop                                                      */
+/* ------------------------------------------------------------------ */
+
+function backToMenu(): void {
+  if (match?.mode === "online") {
+    const online = match;
+    match = null;
+    online.socket.close();
+  }
+  match = null;
+  game = null;
+  phase = { kind: "menu" };
+  showOverlay(null);
+  updateHud();
+  setupForm.hidden = false;
+}
+
+function updateForm(): void {
+  const data = new FormData(setupForm);
+  const online = data.get("mode") === "online";
+  for (const el of setupForm.querySelectorAll<HTMLElement>("[data-mode]"))
+    el.hidden = el.dataset.mode !== data.get("mode");
+  const players = online ? Number(data.get("local")) : Number(data.get("players"));
+  $("#controls").innerHTML = keyBindings
+    .slice(0, players)
+    .map((b, i) => `<li><strong>${online ? `Player ${i + 1}` : defaultPlayers[i]!.name}</strong>: ${b.label}</li>`)
+    .join("");
+  $<HTMLInputElement>("#teams").disabled = online || players < 4;
+  $<HTMLInputElement>("#name2").disabled = Number(data.get("local")) < 2;
+  $<HTMLButtonElement>("#start").textContent = online ? "Connect" : "Start";
 }
 
 let last = performance.now();
@@ -189,66 +476,29 @@ function loop(now: number): void {
   requestAnimationFrame(loop);
 }
 
-async function startMatch(): Promise<void> {
-  const data = new FormData(setupForm);
-  settings = {
-    players: Number(data.get("players")),
-    lives: Number(data.get("lives")),
-    wins: Number(data.get("wins")),
-    teams: data.get("teams") === "on" && Number(data.get("players")) === 4,
-    level: (data.get("level") as string | null) ?? "random",
-  };
-  setupForm.hidden = true;
-  showOverlay("<p>Loading…</p>");
-  if (!sound) {
-    // started from the "Start" click: browsers allow audio after a user gesture
-    sound = new SoundPlayer();
-    await sound.load();
-  }
-  scene = {
-    blocks: [],
-    common,
-    players: await Promise.all(defaultPlayers.slice(0, settings.players).map(loadPlayer)),
-  };
-  victories = Array.from({ length: settings.players }, () => 0);
-  round = 0;
-  matchSeed = crypto.getRandomValues(new Uint32Array(1))[0]!;
-  await startRound();
-}
-
-function backToMenu(): void {
-  game = null;
-  phase = { kind: "over", message: "" };
-  showOverlay(null);
-  hud.innerHTML = "";
-  setupForm.hidden = false;
-}
-
-function updateControls(): void {
-  const players = Number(new FormData(setupForm).get("players"));
-  $("#controls").innerHTML = keyBindings
-    .slice(0, players)
-    .map((b, i) => `<li><strong>${defaultPlayers[i]!.name}</strong>: ${b.label}</li>`)
-    .join("");
-  $<HTMLInputElement>("#teams").disabled = players !== 4;
-}
-
 async function init(): Promise<void> {
   showOverlay("<p>Loading…</p>");
   [levels, common] = await Promise.all([loadLevelIndex(), loadCommon()]);
   const select = $<HTMLSelectElement>("#level");
   for (const level of levels) select.add(new Option(`${level.name} (${level.file})`, level.file));
+  $<HTMLInputElement>("#server").placeholder = defaultServer();
   input = new KeyboardInput(keyBindings);
-  setupForm.addEventListener("change", updateControls);
+  setupForm.addEventListener("change", updateForm);
   setupForm.addEventListener("submit", (e) => {
     e.preventDefault();
-    void startMatch();
+    if (!sound) {
+      // from the click on Start: browsers allow audio after a user gesture
+      sound = new SoundPlayer();
+      void sound.load();
+    }
+    if (new FormData(setupForm).get("mode") === "online") connectOnline();
+    else void startLocal();
   });
   window.addEventListener("keydown", (e) => {
-    if (e.code === "Escape" && game) backToMenu();
-    if (e.code === "Enter" && phase.kind === "over" && game) void startMatch();
+    if (e.code === "Escape" && phase.kind !== "menu") backToMenu();
+    if (e.code === "Enter" && phase.kind === "over" && match?.mode === "local") void startLocal();
   });
-  updateControls();
+  updateForm();
   showOverlay(null);
   setupForm.hidden = false;
   requestAnimationFrame(loop);

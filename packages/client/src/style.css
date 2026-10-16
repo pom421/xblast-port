@@ -159,3 +159,35 @@ footer {
 footer a {
   color: inherit;
 }
+
+.modes,
+.fields {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.modes {
+  flex-direction: row;
+  gap: 24px;
+}
+
+.lobby {
+  text-align: left;
+}
+
+.error {
+  color: #ff6070;
+}
+
+#overlay form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+input {
+  font: inherit;
+}

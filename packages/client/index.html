@@ -17,41 +17,59 @@
         <div id="overlay" hidden></div>
         <form id="setup" hidden>
           <h2>New match</h2>
-          <label
-            >Players
-            <select name="players">
-              <option>2</option>
-              <option>3</option>
-              <option>4</option>
-            </select></label
-          >
-          <label
-            >Lives
-            <select name="lives">
-              <option>1</option>
-              <option selected>2</option>
-              <option>3</option>
-            </select></label
-          >
-          <label
-            >Victories to win
-            <select name="wins">
-              <option>1</option>
-              <option>2</option>
-              <option selected>3</option>
-              <option>5</option>
-              <option>9</option>
-            </select></label
-          >
-          <label><input type="checkbox" name="teams" id="teams" /> Teams of 2 (4 players)</label>
-          <label
-            >Level
-            <select name="level" id="level">
-              <option value="random">Random</option>
-            </select></label
-          >
+          <div class="modes">
+            <label><input type="radio" name="mode" value="local" checked /> Local</label>
+            <label><input type="radio" name="mode" value="online" /> Online (LAN)</label>
+          </div>
+          <div data-mode="local" class="fields">
+            <label
+              >Players
+              <select name="players">
+                <option>2</option>
+                <option>3</option>
+                <option>4</option>
+              </select></label
+            >
+            <label
+              >Lives
+              <select name="lives">
+                <option>1</option>
+                <option selected>2</option>
+                <option>3</option>
+              </select></label
+            >
+            <label
+              >Victories to win
+              <select name="wins">
+                <option>1</option>
+                <option>2</option>
+                <option selected>3</option>
+                <option>5</option>
+                <option>9</option>
+              </select></label
+            >
+            <label><input type="checkbox" name="teams" id="teams" /> Teams of 2 (4 players)</label>
+            <label
+              >Level
+              <select name="level" id="level">
+                <option value="random">Random</option>
+              </select></label
+            >
+          </div>
+          <div data-mode="online" class="fields" hidden>
+            <label
+              >Players on this computer
+              <select name="local">
+                <option>1</option>
+                <option>2</option>
+              </select></label
+            >
+            <label>Name <input name="name1" maxlength="16" value="Player" /></label>
+            <label>Second name <input name="name2" id="name2" maxlength="16" value="Player 2" /></label>
+            <label>Server <input name="server" id="server" size="28" /></label>
+          </div>
           <ul id="controls"></ul>
-          <button type="submit">Start</button>
+          <button type="submit" id="start">Start</button>
           <p class="small">Escape: back to this menu.</p>
         </form>
       </div>
