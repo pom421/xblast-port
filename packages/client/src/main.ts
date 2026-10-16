@@ -1,5 +1,6 @@
-// XBlast in the browser: local matches (2 to 4 players on one keyboard) and
-// online matches (up to 6 players, lockstep through the server). The
+// XBlast in the browser: local matches (1 to 4 players on one keyboard, plus
+// computer players) and online matches (up to 6 players, lockstep through the
+// server). The
 // simulation runs at the original rate (20 frames per second).
 
 import {
@@ -46,6 +47,8 @@ type Phase =
 /** Players of the match, by slot. */
 interface Roster {
   names: string[];
+  /** computer players */
+  bots: boolean[];
   config: MatchConfig;
 }
 
@@ -94,7 +97,7 @@ let input: KeyboardInput;
 let sound: SoundPlayer | null = null;
 
 let match: LocalMatch | OnlineMatch | null = null;
-let roster: Roster = { names: [], config: { lives: 2, wins: 3, teams: false } };
+let roster: Roster = { names: [], bots: [], config: { lives: 2, wins: 3, teams: false } };
 let scene: Scene | null = null;
 let game: Game | null = null;
 let phase: Phase = { kind: "menu" };
@@ -159,7 +162,7 @@ async function beginRound(levelFile: string, seed: number): Promise<void> {
     level,
     seed,
     lives: roster.config.lives,
-    players: roster.names.map((_, slot) => ({ team: teamOf(slot) })),
+    players: roster.names.map((_, slot) => ({ team: teamOf(slot), bot: roster.bots[slot] })),
   });
   phase = { kind: "intro", frames: INTRO_FRAMES };
   showOverlay(
@@ -229,9 +232,12 @@ function tick(): void {
 
 async function startLocal(): Promise<void> {
   const data = new FormData(setupForm);
-  const players = Number(data.get("players"));
+  const humans = Number(data.get("players"));
+  const bots = Math.min(6 - humans, Number(data.get("bots")));
+  const players = humans + bots;
   roster = {
-    names: defaultPlayers.slice(0, players).map((p) => p.name),
+    names: defaultPlayers.slice(0, players).map((p, slot) => (slot < humans ? p.name : `${p.name} (CPU)`)),
+    bots: Array.from({ length: players }, (_, slot) => slot >= humans),
     config: {
       lives: Number(data.get("lives")),
       wins: Number(data.get("wins")),
@@ -259,7 +265,8 @@ async function nextLocalRound(local: LocalMatch): Promise<void> {
 }
 
 function tickLocal(): void {
-  playFrame(input.take().slice(0, roster.names.length));
+  // computer players get their inputs from the game itself
+  playFrame(input.take().slice(0, roster.bots.filter((b) => !b).length));
   if (!game!.over) return;
   const { winnerTeam } = game!.result();
   if (winnerTeam !== null) roster.names.forEach((_, slot) => teamOf(slot) === winnerTeam && victories[slot]!++);
@@ -363,7 +370,11 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       if (phase.kind === "lobby") showLobby(online, message.message, online.title);
       break;
     case "match":
-      roster = { names: message.players.map((p) => p.name), config: message.config };
+      roster = {
+        names: message.players.map((p) => p.name),
+        bots: message.players.map((p) => !!p.bot),
+        config: message.config,
+      };
       online.lobby = message.players;
       victories = roster.names.map(() => 0);
       showOverlay("<p>Loading…</p>");
@@ -420,6 +431,7 @@ function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
     ? `<form id="host-form">
         <label>Lives <select name="lives"><option>1</option><option selected>2</option><option>3</option></select></label>
         <label>Victories to win <select name="wins"><option>1</option><option>2</option><option selected>3</option><option>5</option></select></label>
+        <label>Computer players <select name="bots">${Array.from({ length: Math.max(0, 7 - online.lobby.length) }, (_, i) => `<option>${i}</option>`).join("")}</select></label>
         <label><input type="checkbox" name="teams" /> Teams of 2</label>
         <button type="submit">Start the match</button>
       </form>`
@@ -435,7 +447,12 @@ function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
     const data = new FormData(e.target as HTMLFormElement);
     send(online, {
       type: "start",
-      config: { lives: Number(data.get("lives")), wins: Number(data.get("wins")), teams: data.get("teams") === "on" },
+      config: {
+        lives: Number(data.get("lives")),
+        wins: Number(data.get("wins")),
+        teams: data.get("teams") === "on",
+        bots: Number(data.get("bots")),
+      },
     });
   });
 }
@@ -464,11 +481,12 @@ function updateForm(): void {
   for (const el of setupForm.querySelectorAll<HTMLElement>("[data-mode]"))
     el.hidden = el.dataset.mode !== data.get("mode");
   const players = online ? Number(data.get("local")) : Number(data.get("players"));
+  const total = online ? players : players + Math.min(6 - players, Number(data.get("bots")));
   $("#controls").innerHTML = keyBindings
     .slice(0, players)
     .map((b, i) => `<li><strong>${online ? `Player ${i + 1}` : defaultPlayers[i]!.name}</strong>: ${b.label}</li>`)
     .join("");
-  $<HTMLInputElement>("#teams").disabled = online || players < 4;
+  $<HTMLInputElement>("#teams").disabled = online || total < 4 || total % 2 !== 0;
   $<HTMLInputElement>("#name2").disabled = Number(data.get("local")) < 2;
   $<HTMLButtonElement>("#start").textContent = online ? "Connect" : "Start";
 }

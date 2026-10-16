@@ -14,13 +14,17 @@ export interface MatchConfig {
   wins: number;
   /** teams of 2: players 0 & 1, 2 & 3, 4 & 5 */
   teams: boolean;
+  /** computer players added after the humans */
+  bots?: number;
 }
 
 export interface LobbyPlayer {
   slot: number;
   name: string;
-  /** connection that controls this player */
+  /** connection that controls this player (-1 for a computer player) */
   client: number;
+  /** computer player: every client computes its inputs */
+  bot?: boolean;
 }
 
 /* client → server */

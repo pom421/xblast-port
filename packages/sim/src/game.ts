@@ -24,6 +24,7 @@ import {
   BOMB_VY,
   BONUSEVIL,
   BT,
+  BASE_X,
   BASE_Y,
   DALEIF_TIME,
   DEAD_TIME,
@@ -61,6 +62,7 @@ import {
   STUN_TIME,
   TELEPORT_TIME,
 } from "./constants.ts";
+import { Bot } from "./bot.ts";
 import { DistribExtras, LF, RF, mapChars, type Level } from "./level.ts";
 import { GameRandom } from "./rng.ts";
 import * as shrinkData from "./shrinkdata.ts";
@@ -177,6 +179,8 @@ export interface PlayerAction {
 export interface PlayerSetup {
   /** team number; players with the same team play together. Default: own id (no teams). */
   team?: number;
+  /** computer player (bot.c): its inputs are computed by the game */
+  bot?: boolean;
   turnStep?: number;
 }
 
@@ -194,7 +198,7 @@ export interface GameOptions {
   choiceDefaultBomb?: number;
 }
 
-interface ShrinkStep {
+export interface ShrinkStep {
   time: number;
   block: number;
   x: number;
@@ -269,13 +273,17 @@ export class Game {
   private numExpl = 0;
   exploList: Explosion | null = null;
   private explEnd: Explosion | null = null;
-  private initialBombDir: Dir;
-  private curBombTime: number;
+  initialBombDir: Dir;
+  /** fuse time of the level (bomb.c curBombTime) */
+  curBombTime: number;
   private readonly slowMotionBurst: number;
   private nextNasty: number;
   /* shrink.c */
-  private readonly shrinkSteps: ShrinkStep[];
+  /** shrink blocks, sorted by time (ends with a step at 2 × GAME_TIME) */
+  readonly shrinkSteps: ShrinkStep[];
   private shrinkIndex = 0;
+  /** computer players, by player (null: human) */
+  private readonly bots: (Bot | null)[];
   /* player.c */
   private readonly maxLives: number;
   private readonly ifRecLives: boolean;
@@ -305,6 +313,10 @@ export class Game {
     // active teams, like the network game of the original (remainingTeams);
     // its local game counted players, so team games could not end before the time
     this.numActive = new Set(this.players.map((p) => p.team)).size;
+    // each bot has its own generator, seeded from the game: same decisions on every client
+    this.bots = options.players.map((setup, id) =>
+      setup.bot ? new Bot(Math.imul((options.seed >>> 0) ^ 0x9e3779b9, id + 1) ^ (id << 16)) : null,
+    );
     /* ConfigLevel */
     this.configLevelPlayers();
     this.shrinkSteps = this.configLevelShrink();
@@ -370,8 +382,19 @@ export class Game {
     return { winnerTeam: outOfTime || team === undefined ? null : team, outOfTime };
   }
 
-  /** GameEvalAction */
+  /** GameEvalAction (bots replace the inputs of their players) */
   evalActions(actions: readonly PlayerAction[]): void {
+    if (this.bots.some((b) => b !== null)) {
+      // every bot decides on the same state, before any input is applied
+      const all = [...actions];
+      this.bots.forEach((bot, i) => {
+        if (!bot || this.players[i]!.lives <= 0) return;
+        const pa: PlayerAction = { dir: Dir.Default, bomb: false, special: false };
+        bot.decide(this, i, pa);
+        all[i] = pa;
+      });
+      actions = all;
+    }
     let checkAbort = false;
     this.players.forEach((ps, player) => {
       const pa = actions[player];
@@ -396,7 +419,7 @@ export class Game {
           dir = ([Dir.Stop, Dir.Right, Dir.Up, Dir.Left, Dir.Down, Dir.Default] as Dir[])[dir]!;
         }
         ps.d_soll = dir;
-        const turnX = ps.turnStep * 8;
+        const turnX = ps.turnStep * BASE_X;
         const turnY = ps.turnStep * BASE_Y;
         switch (ps.d_ist) {
           case Dir.Up:
@@ -493,12 +516,14 @@ export class Game {
     return m === BT.Block || m === BT.BlockRise || m === BT.Extra || m === BT.ExtraOpen || m === BT.Void || m < 0;
   }
 
-  private checkMazeFree(x: number, y: number): boolean {
+  /** also used by the bots (bot.ts) */
+  checkMazeFree(x: number, y: number): boolean {
     const m = this.mazeAt(x, y);
     return m === BT.Free || m === BT.Burned;
   }
 
-  private checkMazeFree2(x: number, y: number): boolean {
+  /** also used by the bots (bot.ts) */
+  checkMazeFree2(x: number, y: number): boolean {
     const m = this.mazeAt(x, y);
     return m === BT.Free || m === BT.Void || m === BT.Burned;
   }
@@ -520,12 +545,14 @@ export class Game {
     return m === BT.Void || m < 0 || x <= 0 || y <= 0 || x > MAZE_H || y > MAZE_W - 4;
   }
 
-  private checkMazeSolid(x: number, y: number): boolean {
+  /** also used by the bots (bot.ts) */
+  checkMazeSolid(x: number, y: number): boolean {
     const m = this.mazeAt(x, y);
     return m === BT.Block || m === BT.BlockRise || m === BT.Extra || m === BT.ExtraOpen;
   }
 
-  private checkMazeOpen(x: number, y: number): boolean {
+  /** also used by the bots (bot.ts) */
+  checkMazeOpen(x: number, y: number): boolean {
     const m = this.mazeAt(x, y);
     return m === BT.Free || m === BT.Burned || m === BT.Void;
   }
@@ -1696,7 +1723,8 @@ export class Game {
     }
   }
 
-  private checkBomb(x: number, y: number): boolean {
+  /** also used by the bots (bot.ts) */
+  checkBomb(x: number, y: number): boolean {
     const b = this.bombAt(x, y);
     return b !== null && b.count < 0;
   }

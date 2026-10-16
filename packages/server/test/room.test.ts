@@ -74,3 +74,26 @@ test("round results count victories, detect desyncs, end the match", () => {
   expect(of(inbox[0]!, "matchOver")[0]!.victories).toEqual([0, 2]);
   expect(of(inbox[0]!, "lobby").at(-1)!.playing).toBe(false);
 });
+
+test("the host can add computer players, removed at the end of the match", () => {
+  const { room, inbox } = setup(1);
+  room.receive(1, { type: "join", names: ["Olaf"] });
+  room.receive(1, { type: "start", config: { lives: 1, wins: 1, teams: true, bots: 3 } });
+  const match = of(inbox[0]!, "match")[0]!;
+  expect(match.players.map((p) => [p.name, p.bot ?? false])).toEqual([
+    ["Olaf", false],
+    ["Computer 1", true],
+    ["Computer 2", true],
+    ["Computer 3", true],
+  ]);
+  expect(match.config).toEqual({ lives: 1, wins: 1, teams: true, bots: 3 });
+  // computer players never block the lockstep: their inputs are computed by every client
+  room.receive(1, { type: "input", round: 1, frame: 4, actions: [[1, 0, 0]] });
+  expect(of(inbox[0]!, "frame").at(-1)!.frame).toBe(4);
+  room.receive(1, { type: "over", round: 1, frame: 50, hash: 1, winnerTeam: 0 });
+  expect(
+    of(inbox[0]!, "lobby")
+      .at(-1)!
+      .players.map((p) => p.name),
+  ).toEqual(["Olaf"]);
+});
