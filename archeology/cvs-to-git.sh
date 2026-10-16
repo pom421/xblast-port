@@ -2,8 +2,9 @@
 # Converts the XBlast CVS snapshot from SourceForge into a git repository.
 # Needs cvs-fast-export (brew install cvs-fast-export). Result: original/history
 set -e
+# original/ is not versioned: create it on a fresh checkout
+mkdir -p "$(dirname "$0")/../original/downloads"
 cd "$(dirname "$0")/../original"
-mkdir -p downloads
 [ -f downloads/xblast-cvs.zip ] ||
   curl -fL -A Wget -o downloads/xblast-cvs.zip https://sourceforge.net/code-snapshots/cvs/x/xb/xblast.zip
 rm -rf cvs history && mkdir cvs

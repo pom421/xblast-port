@@ -3,9 +3,11 @@
 // player for that frame are known. Kept free of Bun APIs to be testable.
 
 import {
+  chooseLevel,
   idleAction,
   teamOfSlot,
   type ClientMessage,
+  type LevelChoice,
   type LobbyPlayer,
   type MatchConfig,
   type NetAction,
@@ -19,12 +21,6 @@ export const INPUT_DELAY = 3;
 export interface Connection {
   readonly id: number;
   send(message: ServerMessage): void;
-}
-
-export interface LevelChoice {
-  file: string;
-  players: number;
-  gameMode: number;
 }
 
 interface OverReport {
@@ -144,9 +140,7 @@ export class Room {
     this.reports.clear();
     this.inputs = new Map();
     this.nextFrame = 1;
-    const n = this.players.length;
-    const candidates = this.levels.filter((l) => l.players >= n && (!this.config.teams || l.gameMode & (1 << 7)));
-    const level = candidates[Math.floor(this.random() * candidates.length)]!;
+    const level = chooseLevel(this.levels, this.players.length, this.config.teams, this.random);
     const seed = Math.floor(this.random() * 2 ** 32);
     this.broadcast({ type: "round", round: this.round, level: level.file, seed, delay: INPUT_DELAY });
     // the first frames have no input yet: nothing pressed
