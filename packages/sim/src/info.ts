@@ -7,6 +7,37 @@ import { LF, RF, type BlockGraphic, type Level } from "./level.ts";
 
 const MAX_INFO = 7;
 
+/**
+ * Wording fixes over the texts of the original (typos, "(rephrase)"
+ * placeholders), applied to every line. The tables below stay verbatim
+ * transcriptions: the golden test applies these same fixes to the texts
+ * dumped from the original, so anything else still has to match exactly.
+ */
+export const wordingFixes: [original: string, fixed: string][] = [
+  ["Rang extras", "Range extras"],
+  ["continous", "continuous"],
+  ["three quarter of time", "three quarters of time"],
+  ["3 level wave shrink at", "3 level wave shrinking at"],
+  ["Early Horizontal shrink ", "Early horizontal shrinking"],
+  ["Cirlcle shrink (rephrase)", "Early circle shrinking"],
+  ["Moving shrink (rephrase)", "Moving shrinking"],
+  ["Isty spiral 3 (rephrase)", "Early 3 level spiral shrinking"],
+  ["Isty compound 2F (rephrase)", "4 level compound shrinking at half time"],
+  ["Diagonal shrink (rephrase)", "Diagonal shrinking"],
+  ["Outward compound extra (rephrase)", "Outward compound shrinking with blastables"],
+  ["Spiral5 (rephrase)", "5 level spiral shrinking at quarter time"],
+  ["randomly of walls", "randomly off walls"],
+  ["split with contact off Bombs", "split on contact with others"],
+  ["split with contact off Walls", "split on contact with walls"],
+  ["split with contact off players", "split on contact with players"],
+  ["Revive control as an extra", "Revive as an extra"],
+];
+
+export function fixWording(text: string): string {
+  for (const [original, fixed] of wordingFixes) text = text.replace(original, fixed);
+  return text;
+}
+
 export interface LevelInfo {
   player: string[];
   level: string[];
@@ -229,7 +260,7 @@ function sameTile(a: BlockGraphic, b: BlockGraphic): boolean {
 export function levelInfo(level: Level): LevelInfo {
   const info: LevelInfo = { player: [], level: [], extra: [] };
   const add = (box: keyof LevelInfo, text: string | null | undefined) => {
-    if (text && info[box].length < MAX_INFO) info[box].push(text);
+    if (text && info[box].length < MAX_INFO) info[box].push(fixWording(text));
   };
 
   /* ConfigLevelPlayers */
