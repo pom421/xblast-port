@@ -44,7 +44,9 @@ and QWERTY keyboards):
 | 4      | numpad 8 4 2 6 | numpad 0 | numpad 5   | numpad . |
 
 Like the original, a player keeps walking until the stop key; "Releasing a
-direction stops" changes that per player. Escape goes back to the menu. Graphics
+direction stops" changes that per player. Escape or P pauses the game (resume,
+abandon the round, quit to the menu). When every keyboard player is out, Enter
+plays the rest of the round at once: the computer players still decide who wins. Graphics
 are the original files (`assets/image`, Debian `xblast-tnt-images`/`-models`),
 decoded and recolored in the browser like the original did, with its sound
 effects (`assets/sounds`). No music yet.

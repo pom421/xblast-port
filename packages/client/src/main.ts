@@ -44,7 +44,8 @@ type Phase =
   | { kind: "play" }
   | { kind: "result"; frames: number }
   | { kind: "waiting" }
-  | { kind: "over" };
+  | { kind: "over" }
+  | { kind: "paused"; resume: Phase };
 
 /** Players of the match, by slot. */
 interface Roster {
@@ -94,6 +95,7 @@ const setupForm = $<HTMLFormElement>("#setup");
 const overlay = $<HTMLDivElement>("#overlay");
 const hud = $<HTMLDivElement>("#hud");
 const timeBar = $<HTMLDivElement>("#time");
+const banner = $<HTMLDivElement>("#banner");
 
 let levels: LevelEntry[] = [];
 let common: Awaited<ReturnType<typeof loadCommon>>;
@@ -275,10 +277,41 @@ async function nextLocalRound(local: LocalMatch): Promise<void> {
   await beginRound(file, (local.seed + local.round) >>> 0);
 }
 
+/** Every keyboard player is out (and computer players still play). */
+function humansOut(): boolean {
+  return !!game && roster.bots.some((b) => !b) && game.players.every((p, slot) => roster.bots[slot] || p.lives <= 0);
+}
+
 function tickLocal(): void {
   // computer players get their inputs from the game itself
   playFrame(input.take().slice(0, roster.bots.filter((b) => !b).length));
-  if (!game!.over) return;
+  if (!game!.over) {
+    banner.hidden = !humansOut();
+    return;
+  }
+  finishLocalRound();
+}
+
+/** Plays the rest of the round at once, without display: same result as watching it. */
+function fastForward(): void {
+  if (!game || phase.kind !== "play") return;
+  while (!game.over) {
+    game.turn();
+    game.evalActions([]);
+    game.endFrame();
+  }
+  render(ctx, game, scene!);
+  timeBar.style.width = `${100 * (1 - game.gameTime / GAME_TIME)}%`;
+  finishLocalRound();
+}
+
+function finishLocalRound(abandoned = false): void {
+  banner.hidden = true;
+  if (abandoned) {
+    phase = { kind: "result", frames: RESULT_FRAMES };
+    showOverlay("<h2>Round abandoned</h2>");
+    return;
+  }
   const { winnerTeam } = game!.result();
   if (winnerTeam !== null) roster.names.forEach((_, slot) => teamOf(slot) === winnerTeam && victories[slot]!++);
   const message = roundMessage();
@@ -481,7 +514,47 @@ function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
 /* menu and loop                                                      */
 /* ------------------------------------------------------------------ */
 
+function pause(): void {
+  if (phase.kind !== "play" && phase.kind !== "intro") return;
+  phase = { kind: "paused", resume: phase };
+  banner.hidden = true;
+  showOverlay(
+    `<h2>Pause</h2><div class="menu">` +
+      `<button type="button" data-pause="resume">Resume (P or Escape)</button>` +
+      (humansOut()
+        ? `<button type="button" data-pause="forward">Fast-forward to the end of the round (Enter)</button>`
+        : "") +
+      `<button type="button" data-pause="abandon">Abandon the round (A)</button>` +
+      `<button type="button" data-pause="quit">Quit to the menu (Q)</button></div>`,
+  );
+}
+
+function pauseAction(action: string): void {
+  if (phase.kind !== "paused") return;
+  const resume = phase.resume;
+  switch (action) {
+    case "resume":
+      phase = resume;
+      showOverlay(null);
+      input.take();
+      break;
+    case "forward":
+      if (!humansOut()) return;
+      phase = { kind: "play" };
+      showOverlay(null);
+      fastForward();
+      break;
+    case "abandon":
+      finishLocalRound(true);
+      break;
+    case "quit":
+      backToMenu();
+      break;
+  }
+}
+
 function backToMenu(): void {
+  banner.hidden = true;
   if (match?.mode === "online") {
     const online = match;
     match = null;
@@ -549,9 +622,43 @@ async function init(): Promise<void> {
     if (new FormData(setupForm).get("mode") === "online") connectOnline();
     else void startLocal();
   });
+  overlay.addEventListener("click", (e) => {
+    const action = (e.target as HTMLElement).closest<HTMLElement>("[data-pause]")?.dataset.pause;
+    if (action) pauseAction(action);
+  });
+  banner.addEventListener("click", () => fastForward());
   window.addEventListener("keydown", (e) => {
+    if (input.capturing) return;
+    const local = match?.mode === "local";
+    if (phase.kind === "paused") {
+      const keys: Record<string, string> = {
+        Escape: "resume",
+        KeyP: "resume",
+        Enter: "forward",
+        KeyA: "abandon",
+        KeyQ: "quit",
+      };
+      if (keys[e.code]) {
+        e.preventDefault();
+        pauseAction(keys[e.code]!);
+      }
+      return;
+    }
+    // P pauses too, unless a player uses it
+    const pauseKey =
+      e.code === "Escape" || (e.code === "KeyP" && !settings.some((p) => Object.values(p.keys).includes("KeyP")));
+    if (local && (phase.kind === "play" || phase.kind === "intro") && pauseKey) {
+      e.preventDefault();
+      pause();
+      return;
+    }
+    if (local && phase.kind === "play" && e.code === "Enter" && humansOut()) {
+      e.preventDefault();
+      fastForward();
+      return;
+    }
     if (e.code === "Escape" && phase.kind !== "menu") backToMenu();
-    if (e.code === "Enter" && phase.kind === "over" && match?.mode === "local") void startLocal();
+    if (e.code === "Enter" && phase.kind === "over" && local) void startLocal();
   });
   updateForm();
   showOverlay(null);
