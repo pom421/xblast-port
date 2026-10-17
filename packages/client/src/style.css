@@ -34,45 +34,14 @@ h1 {
   color: var(--accent);
 }
 
-#hud {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.player {
-  display: flex;
-  gap: 6px;
-  align-items: baseline;
-  padding: 2px 8px;
-  border-left: 4px solid var(--color);
-  background: var(--panel);
-}
-
-.player.out {
-  opacity: 0.4;
-}
-
-.lives {
-  color: #e04060;
-}
-
-.wins {
-  color: var(--accent);
-}
-
-.team {
-  color: var(--muted);
-  font-size: 0.8em;
-}
-
 main {
   width: min(960px, 100vw);
 }
 
 #board {
   position: relative;
-  aspect-ratio: 960 / 624;
+  /* board and status bar */
+  aspect-ratio: 960 / 736;
 }
 
 #game {
@@ -81,17 +50,6 @@ main {
   image-rendering: pixelated;
   background: #000;
   display: block;
-}
-
-#timebar {
-  height: 4px;
-  background: var(--panel);
-}
-
-#time {
-  height: 100%;
-  width: 100%;
-  background: var(--accent);
 }
 
 #overlay,
@@ -255,7 +213,8 @@ kbd {
 #banner {
   position: absolute;
   left: 50%;
-  bottom: 16px;
+  /* over the board, above the status bar */
+  bottom: calc(100% * 112 / 736 + 16px);
   transform: translateX(-50%);
   padding: 6px 16px;
   background: rgb(0 0 0 / 0.75);

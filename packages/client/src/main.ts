@@ -4,7 +4,6 @@
 
 import {
   FRAME_RATE,
-  GAME_TIME,
   chooseLevel,
   Game,
   hashGame,
@@ -36,9 +35,11 @@ import { keyLabel, loadKeyboardLayout, loadSettings, type PlayerSettings } from 
 import { HEIGHT, WIDTH, render, type Scene } from "./render.ts";
 import { Board, drawLevelEnd, drawLevelIntro, loadScreens, type BoardPlayer, type ScreenAssets } from "./screens.ts";
 import { SoundPlayer } from "./sound.ts";
+import { loadFaces, loadStatus, SCOREH, StatusBar, type StatusAssets } from "./status.ts";
 import "./style.css";
 
 const FRAME_MS = 1000 / FRAME_RATE;
+const PRESS = "Press Space or Return";
 /* online, the server sets the pace: fixed times instead of waiting for Space */
 const INTRO_FRAMES = 3 * FRAME_RATE;
 const END_FRAMES = FRAME_RATE;
@@ -55,7 +56,7 @@ type Phase =
   | { kind: "play" }
   | { kind: "end"; frames: number; message: string; winners: number[]; last: boolean }
   | { kind: "scores"; board: Board }
-  | { kind: "winner"; board: Board; frames: number }
+  | { kind: "winner"; board: Board }
   | { kind: "waiting" }
   | { kind: "paused"; resume: Phase };
 
@@ -99,19 +100,18 @@ const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>
 
 const canvas = $<HTMLCanvasElement>("#game");
 canvas.width = WIDTH;
-canvas.height = HEIGHT;
+canvas.height = HEIGHT + SCOREH;
 const ctx = canvas.getContext("2d")!;
 ctx.imageSmoothingEnabled = false;
 
 const setupForm = $<HTMLFormElement>("#setup");
 const overlay = $<HTMLDivElement>("#overlay");
-const hud = $<HTMLDivElement>("#hud");
-const timeBar = $<HTMLDivElement>("#time");
 const banner = $<HTMLDivElement>("#banner");
 
 let levels: LevelEntry[] = [];
 let common: Awaited<ReturnType<typeof loadCommon>>;
 let screens: ScreenAssets;
+let statusAssets: StatusAssets;
 /** sprites of the 6 default players: the audience of the score board */
 let defaultSprites: Promise<Sprite[][]> | null = null;
 let input: KeyboardInput;
@@ -123,6 +123,8 @@ let cards: PlayerCards;
 let match: LocalMatch | OnlineMatch | null = null;
 let roster: Roster = { names: [], looks: [], bots: [], config: { lives: 2, wins: 3, teams: false } };
 let scene: Scene | null = null;
+/** status bar under the board, with the faces of the players of the match */
+let status: StatusBar | null = null;
 let game: Game | null = null;
 let phase: Phase = { kind: "menu" };
 let victories: number[] = [];
@@ -151,36 +153,10 @@ function showBanner(html: string | null): void {
   if (html !== null) banner.innerHTML = html;
 }
 
-/** Messages that wait for a key alternate with "Press Space or Return" (every 2 seconds). */
-function pressMessage(message: string, frames: number): string {
-  return Math.floor(frames / (2 * FRAME_RATE)) % 2 ? "Press Space or Return" : message;
-}
-
 const teamOf = (slot: number) => teamOfSlot(slot, roster.config);
 
 function teamName(team: number): string {
   return roster.names.filter((_, slot) => teamOf(slot) === team).join(" & ");
-}
-
-function updateHud(): void {
-  if (!game) {
-    hud.innerHTML = "";
-    return;
-  }
-  hud.innerHTML = game.players
-    .map((p, slot) => {
-      const look = roster.looks[slot] ?? defaultPlayers[slot]!;
-      const lives = Math.max(0, p.dying ? p.lives - 1 : p.lives);
-      const team = roster.config.teams ? ` <span class="team">team ${teamOf(slot) + 1}</span>` : "";
-      const color = look.colors[2] === "#000000" ? look.colors[3] : look.colors[2];
-      return (
-        `<div class="player${lives ? "" : " out"}" style="--color: ${color}">` +
-        `<span class="name">${escapeHtml(roster.names[slot] ?? look.name)}</span>${team}` +
-        `<span class="lives" title="lives">${"♥".repeat(lives)}</span>` +
-        `<span class="wins" title="victories">${"★".repeat(victories[slot] ?? 0)}</span></div>`
-      );
-    })
-    .join("");
 }
 
 /* ------------------------------------------------------------------ */
@@ -188,11 +164,12 @@ function updateHud(): void {
 /* ------------------------------------------------------------------ */
 
 async function loadScene(): Promise<void> {
-  scene = {
-    blocks: [],
-    common,
-    players: await Promise.all(roster.looks.map(loadPlayer)),
-  };
+  const [players, faces] = await Promise.all([
+    Promise.all(roster.looks.map(loadPlayer)),
+    Promise.all(roster.looks.map(loadFaces)),
+  ]);
+  scene = { blocks: [], common, players };
+  status = new StatusBar(statusAssets, screens, faces);
 }
 
 async function beginRound(levelFile: string, seed: number): Promise<void> {
@@ -207,22 +184,26 @@ async function beginRound(levelFile: string, seed: number): Promise<void> {
   });
   phase = { kind: "intro", frames: INTRO_FRAMES };
   showOverlay(null);
+  status!.reset(PRESS, victories, null);
+  if (match?.mode === "online") status!.setMessage(countdown(INTRO_FRAMES), true);
   drawIntro();
-  timeBar.style.width = "100%";
-  updateHud();
 }
 
-/** LevelIntro: "Press Space or Return" locally, a countdown online (DoWait). */
+/** DoWait: the countdown of the level intro online. */
+const countdown = (frames: number) => `${Math.ceil(frames / FRAME_RATE)}`;
+
 function drawIntro(): void {
-  if (phase.kind !== "intro") return;
-  const message = match?.mode === "online" ? `${Math.ceil(phase.frames / FRAME_RATE)}` : "Press Space or Return";
-  drawLevelIntro(ctx, screens, game!, scene!, level!, info, message);
+  drawLevelIntro(ctx, screens, game!, scene!, level!, info);
+  status!.draw(ctx);
 }
 
+/** LevelBegin: the status bar shows the lives and the name of the level. */
 function startPlay(): void {
   phase = { kind: "play" };
   showBanner(null);
+  status!.reset(level!.name, victories, game);
   render(ctx, game!, scene!);
+  status!.draw(ctx);
   input.take();
   startMusic();
 }
@@ -249,8 +230,8 @@ function endRound(message: string, winnerTeam: number | null): void {
   if (winnerTeam !== null) sound?.play("won", WIDTH / 2);
   const winners = roster.names.flatMap((_, slot) => (teamOf(slot) === winnerTeam ? [slot] : []));
   phase = { kind: "end", frames: 0, message, winners, last: champion() >= 0 };
+  status!.setMessage(message, true);
   showBanner(null);
-  updateHud();
 }
 
 function boardPlayers(): BoardPlayer[] {
@@ -275,12 +256,14 @@ async function nextScreen(last: boolean): Promise<void> {
   const bomb = common.bombs[0]![0]!;
   if (last) {
     const board = Board.winner(screens, sprites, bomb, boardPlayers(), teamOf(champion()));
-    phase = { kind: "winner", board, frames: 0 };
+    phase = { kind: "winner", board };
+    status!.reset("CONGRATULATIONS!", victories, null);
     sound?.play("finale", WIDTH / 2);
   } else {
     const maxNumWins = Math.max(0, ...victories);
     const board = Board.scores(screens, sprites, bomb, boardPlayers(), lastTeam, maxNumWins, roster.config.wins);
     phase = { kind: "scores", board };
+    status!.reset("Scoreboard", victories, null);
     sound?.play("applause", WIDTH / 2);
   }
 }
@@ -321,39 +304,43 @@ function playFrame(actions: PlayerAction[]): void {
   for (const s of game!.sounds) sound?.play(s.name, s.x);
   render(ctx, game!, scene!);
   game!.endFrame();
-  timeBar.style.width = `${100 * (1 - game!.gameTime / GAME_TIME)}%`;
-  if (game!.gameTime % 5 === 0) updateHud();
+  status!.update(game!);
+  status!.draw(ctx);
 }
 
 const toAction = ([dir, bomb, special]: NetAction): PlayerAction => ({ dir, bomb: !!bomb, special: !!special });
 const toNet = (a: PlayerAction): NetAction => [a.dir, a.bomb ? 1 : 0, a.special ? 1 : 0];
 
 function tick(): void {
-  if (!game || !scene || !match) return;
+  if (!game || !scene || !match || !status) return;
   switch (phase.kind) {
     case "intro":
       if (match.mode === "online") {
         if (--phase.frames <= 0) startPlay();
-        else if (phase.frames % FRAME_RATE === 0) drawIntro();
+        else if (phase.frames % FRAME_RATE === 0) {
+          status.setMessage(countdown(phase.frames), true);
+          drawIntro();
+        }
       }
       break;
     case "play":
       if (match.mode === "local") tickLocal();
       else tickOnline(match);
       break;
-    case "end": {
-      const message = match.mode === "local" ? pressMessage(phase.message, phase.frames) : phase.message;
-      drawLevelEnd(ctx, screens, game, scene, phase.winners, phase.frames++, message);
+    case "end":
+      // locally, the message alternates with how to go on (LevelEnd)
+      if (match.mode === "local" && phase.frames % 16 === 0) {
+        status.setMessage(phase.frames % 32 ? PRESS : phase.message, true);
+      }
+      drawLevelEnd(ctx, game, scene, phase.winners, phase.frames++);
+      status.draw(ctx);
       if (match.mode === "online" && phase.frames === END_FRAMES) void nextScreen(phase.last);
       break;
-    }
     case "scores":
-      phase.board.tick();
-      phase.board.draw(ctx, null);
-      break;
     case "winner":
       phase.board.tick();
-      phase.board.draw(ctx, pressMessage("CONGRATULATIONS!", phase.frames++));
+      phase.board.draw(ctx);
+      status.draw(ctx);
       break;
     default:
       break;
@@ -427,7 +414,8 @@ function fastForward(): void {
     game.endFrame();
   }
   render(ctx, game, scene!);
-  timeBar.style.width = `${100 * (1 - game.gameTime / GAME_TIME)}%`;
+  status!.update(game);
+  status!.draw(ctx);
   finishLocalRound();
 }
 
@@ -700,7 +688,6 @@ function backToMenu(): void {
   game = null;
   phase = { kind: "menu" };
   showOverlay(null);
-  updateHud();
   setupForm.hidden = false;
 }
 
@@ -736,7 +723,13 @@ function loop(now: number): void {
 
 async function init(): Promise<void> {
   showOverlay("<p>Loading…</p>");
-  [levels, common, screens] = await Promise.all([loadLevelIndex(), loadCommon(), loadScreens(), loadKeyboardLayout()]);
+  [levels, common, screens, statusAssets] = await Promise.all([
+    loadLevelIndex(),
+    loadCommon(),
+    loadScreens(),
+    loadStatus(),
+    loadKeyboardLayout(),
+  ]);
   const select = $<HTMLSelectElement>("#level");
   for (const level of levels) select.add(new Option(`${level.name} (${level.file})`, level.file));
   $<HTMLInputElement>("#server").placeholder = defaultServer();

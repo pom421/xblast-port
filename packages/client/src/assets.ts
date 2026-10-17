@@ -171,6 +171,11 @@ export function loadMisc(name: string): Promise<Uint8Array> {
   return file(`image/misc/${name}.ppm`);
 }
 
+/** A file of image/score (tiles of the status bar), with its extension. */
+export function loadScore(name: string): Promise<Uint8Array> {
+  return file(`image/score/${name}`);
+}
+
 export async function loadLevelText(fileName: string): Promise<string> {
   return new TextDecoder("latin1").decode(await file(`levels/${fileName}`));
 }
