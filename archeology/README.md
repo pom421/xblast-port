@@ -66,6 +66,18 @@ players also use the special key. The last one, `FullPowerRingOFire`, has an
 explosion going out of the maze: the C code then reads memory outside of the
 `maze` array (undefined behaviour), which the port does not emulate.
 
+The same binary also dumps the texts of the level intro screen (player, level
+and extra info) of every level, the reference of `packages/sim/test/info.test.ts`:
+
+```bash
+levels=$(ls assets/levels | sed -n 's/\.xal$//p' | paste -sd, -)
+docker run --rm -e LEVELS="$levels" -v "$PWD/original/info:/out" \
+  -v "$PWD/archeology/original/golden/config/game.cfg:/root/.xblast_tnt/config/game.cfg:ro" \
+  --entrypoint sh xblast-original -c 'Xvfb :0 -nolisten tcp >/dev/null 2>&1 & sleep 1;
+    DISPLAY=:0 XBLAST_GOLDEN=/out XBLAST_GOLDEN_INFO=1 XBLAST_GOLDEN_LEVELS="$LEVELS" xblast-golden'
+gzip -9c original/info/level-info.jsonl > packages/sim/test/level-info.jsonl.gz
+```
+
 Other scripts:
 
 - `gen-shrinkdata.py`: converts `shrinkdat.h` into `packages/sim/src/shrinkdata.ts`.

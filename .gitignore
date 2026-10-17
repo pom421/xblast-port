@@ -20,3 +20,4 @@ dist
 
 # Golden fixtures (a global gitignore may exclude *.gz)
 !packages/sim/test/golden/*.gz
+!packages/sim/test/*.gz

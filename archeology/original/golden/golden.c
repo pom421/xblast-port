@@ -11,6 +11,10 @@
  *
  * Players are "monkeys": pseudo-random inputs from their own generator, so the
  * game random generator (GameRandomNumber) is only used by the game rules.
+ * XBLAST_GOLDEN_INFO=1 instead appends to <output dir>/level-info.jsonl the
+ * texts of the level intro screen (player, level and extra info) of the
+ * levels of XBLAST_GOLDEN_LEVELS.
+ *
  * Output: one JSON Lines file per game; line 1 is metadata, then one line per
  * frame (frame 0 = after level setup). Frame t = state after GameTurn (t), and
  * the inputs then applied by GameEvalAction; GameUpdateWindow ends the frame.
@@ -18,6 +22,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 extern int i97, j97;
 extern double c;
@@ -150,6 +155,59 @@ MonkeyActions (int numPlayer, PlayerAction * pa, int *hold, BMDirection * dir, i
 	}
 }
 
+static void
+GoldenInfo (FILE * out, const char *name, const char **info, int num)
+{
+	int i;
+	fprintf (out, ",\"%s\":[", name);
+	for (i = 0; i < num; i++) {
+		if (i) {
+			fputc (',', out);
+		}
+		GoldenString (out, info[i]);
+	}
+	fputc (']', out);
+}
+
+/* intro screen texts of levels, after ConfigLevel (as LevelIntro shows them) */
+static void
+RunGoldenInfo (const char *outDir, const char *levels)
+{
+	char path[1024], name[256];
+	XBAtom atom;
+	const DBRoot *level;
+	const char **info;
+	const char *end;
+	int num;
+	FILE *out;
+
+	snprintf (path, sizeof (path), "%s/level-info.jsonl", outDir);
+	if (NULL == levels || NULL == (out = fopen (path, "a"))) {
+		fprintf (stderr, "golden: cannot write %s or no XBLAST_GOLDEN_LEVELS\n", path);
+		return;
+	}
+	for (; *levels != '\0'; levels = end ? end + 1 : "") {
+		end = strchr (levels, ',');
+		snprintf (name, sizeof (name), "%.*s", (int)(end ? (size_t)(end - levels) : strlen (levels)), levels);
+		atom = GUI_StringToAtom (name);
+		if (NULL == (level = LoadLevelFile (atom)) || !ConfigLevel (level)) {
+			continue;
+		}
+		fputs ("{\"file\":", out);
+		GoldenString (out, GUI_AtomToString (atom));
+		info = GetPlayerInfo (&num);
+		GoldenInfo (out, "player", info, num);
+		info = GetLevelInfo (&num);
+		GoldenInfo (out, "level", info, num);
+		info = GetExtraInfo (&num);
+		GoldenInfo (out, "extra", info, num);
+		fputs ("}\n", out);
+		FinishLevel ();
+		DeleteAllExplosions ();
+	}
+	fclose (out);
+}
+
 void
 RunGoldenGame (const char *outDir)
 {
@@ -171,6 +229,11 @@ RunGoldenGame (const char *outDir)
 	if (!RetrieveGame (CT_Local, atomLocal, &game) || !InitLevels (&game) ||
 		!InitGame (XBPH_Local, CT_Local, &game, action)) {
 		fprintf (stderr, "golden: cannot init the local game (see config/game.cfg)\n");
+		return;
+	}
+	if (EnvInt ("XBLAST_GOLDEN_INFO", 0)) {
+		RunGoldenInfo (outDir, getenv ("XBLAST_GOLDEN_LEVELS"));
+		FinishGame (&game);
 		return;
 	}
 	levels = getenv ("XBLAST_GOLDEN_LEVELS");
