@@ -129,13 +129,14 @@ function tiled(ctx: CanvasRenderingContext2D, tile: Sprite, oy: number): CanvasP
   return pattern;
 }
 
-/** GUI_DrawTextbox */
+/** GUI_DrawTextbox; without `fit`, GUI_DrawSimpleTextbox (the text is clipped, not shortened) */
 export function drawTextbox(
   ctx: CanvasRenderingContext2D,
   assets: ScreenAssets,
   text: string | null,
   flags: number,
   { x, y, w, h }: Rect,
+  fit = true,
 ): void {
   const oy = y + Math.trunc((h - BLOCK_HEIGHT) / 2);
   const [fgTile, bgTile] = flags & FF.White ? [assets.light, assets.dark] : [assets.dark, assets.light];
@@ -160,7 +161,7 @@ export function drawTextbox(
     ctx.font = fonts[flags & 3]!;
     // DrawAlignedText: drop the last characters until the text fits
     let shown = text;
-    while (shown && ctx.measureText(shown).width > w - 2 * BASE_X) shown = shown.slice(0, -1);
+    while (fit && shown && ctx.measureText(shown).width > w - 2 * BASE_X) shown = shown.slice(0, -1);
     const metrics = ctx.measureText(shown);
     const height = metrics.fontBoundingBoxAscent - metrics.fontBoundingBoxDescent;
     const tx = x + Math.trunc((w - metrics.width) / 2);
@@ -190,7 +191,7 @@ const BW = BLOCK_WIDTH;
 const BH = BLOCK_HEIGHT;
 const div = (a: number, b: number) => Math.trunc(a / b);
 
-function titleBoxes(level: Level, message: string): TextBox[] {
+function titleBoxes(level: Level): TextBox[] {
   return [
     {
       text: "",
@@ -212,9 +213,8 @@ function titleBoxes(level: Level, message: string): TextBox[] {
       flags: FF.White | FF.Boxed | FF.Large,
       rect: { x: div(5 * BW, 2), y: div(67 * BH, 6), w: 10 * BW, h: div(2 * BH, 3) },
     },
-    // the original shows "visit http://xblast.sf.net/" here, and its messages in the status bar
     {
-      text: message,
+      text: "visit http://xblast.sf.net/",
       flags: FF.White | FF.Boxed | FF.Small,
       rect: { x: div(8 * BW, 2), y: div(73 * BH, 6), w: 7 * BW, h: div(2 * BH, 3) },
     },
@@ -245,25 +245,14 @@ export function drawLevelIntro(
   scene: Scene,
   level: Level,
   info: LevelInfo,
-  message: string,
 ): void {
   render(ctx, game, scene, () => StopDown);
   drawTextboxes(ctx, assets, [
-    ...titleBoxes(level, message),
+    ...titleBoxes(level),
     ...infoBoxes("Player Info", BW / 2, div(3 * BW, 8), 4 * BW, div(17 * BW, 4), info.player),
     ...infoBoxes("Level Info", div(21 * BW, 4), div(41 * BW, 8), div(9 * BW, 2), div(19 * BW, 4), info.level),
     ...infoBoxes("Extra Info", div(42 * BW, 4), div(83 * BW, 8), 4 * BW, div(17 * BW, 4), info.extra),
   ]);
-}
-
-/** Message of the status bar, shown at the bottom of the screens. */
-export function drawMessage(ctx: CanvasRenderingContext2D, assets: ScreenAssets, message: string): void {
-  drawTextbox(ctx, assets, message, FF.White | FF.Boxed | FF.Large, {
-    x: div(5 * BW, 2),
-    y: div(70 * BH, 6),
-    w: 10 * BW,
-    h: div(2 * BH, 3),
-  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -272,16 +261,13 @@ export function drawMessage(ctx: CanvasRenderingContext2D, assets: ScreenAssets,
 
 export function drawLevelEnd(
   ctx: CanvasRenderingContext2D,
-  assets: ScreenAssets,
   game: Game,
   scene: Scene,
   winners: number[],
   frame: number,
-  message: string,
 ): void {
   const anime = winnerAnime[frame % winnerAnime.length]!;
   render(ctx, game, scene, (slot) => (winners.includes(slot) ? anime : undefined));
-  drawMessage(ctx, assets, message);
 }
 
 /* ------------------------------------------------------------------ */
@@ -487,7 +473,7 @@ export class Board {
     for (const fan of this.audience) fan.phase = (fan.phase + 1) % fan.anime.length;
   }
 
-  draw(ctx: CanvasRenderingContext2D, message: string | null): void {
+  draw(ctx: CanvasRenderingContext2D): void {
     const { scoreBlocks } = this.assets;
     for (let x = 0; x < MAZE_W; x++) {
       for (let y = 0; y < MAZE_H; y++) ctx.drawImage(scoreBlocks[this.map[x]![y]!]!, x * BW, y * BH);
@@ -501,6 +487,5 @@ export class Board {
     for (const { a, frames } of sprites) drawPlayer(ctx, frames, a.anime[a.phase]!, a.x, a.y);
     for (const t of this.trophies) ctx.drawImage(this.bombImage, t.x, t.y);
     drawTextboxes(ctx, this.assets, this.names);
-    if (message) drawMessage(ctx, this.assets, message);
   }
 }
