@@ -76,6 +76,22 @@ desynchronisation. In development, run `vp run @xblast/server#dev` next to
 `bun packages/server/test/bots.ts [bots]` plays a whole match with headless bots
 against a running server.
 
+## Deploy (play over the Internet)
+
+The `Dockerfile` builds one small image (~120 MB): the built client, the
+original data and the server bundled into one file, run as an unprivileged
+user.
+
+```bash
+docker build -t xblast .
+docker run -p 3001:3001 xblast
+```
+
+Any host that runs a container works. Run **one instance only**: the game room
+lives in the server's memory. Put it behind HTTPS (the host's proxy, or Caddy):
+the client then connects with `wss://` on its own. The GPL asks to offer the
+sources of the client to its players: link this repository.
+
 ## Layout
 
 | Package           | Runs in    | Role                                                    |

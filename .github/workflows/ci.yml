@@ -29,3 +29,5 @@ jobs:
       - run: vp check
       - run: vp run -r test
       - run: vp run @xblast/client#build
+      # The deployable image still builds.
+      - run: docker build -t xblast .
