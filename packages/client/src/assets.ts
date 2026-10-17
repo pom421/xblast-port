@@ -155,7 +155,7 @@ export async function loadCommon(): Promise<CommonSprites> {
 }
 
 /** The 11 blocks of a level ([graphics] section), recolored. */
-export async function loadBlocks(level: Level): Promise<Sprite[]> {
+export async function loadBlocks(level: Pick<Level, "blocks">): Promise<Sprite[]> {
   return Promise.all(
     level.blocks.slice(0, MAX_BLOCK).map(async (block) => {
       const ppm = readPpm(await file(`image/block/${block.name}.ppm`));
@@ -164,6 +164,11 @@ export async function loadBlocks(level: Level): Promise<Sprite[]> {
       return toCanvas(recolorBlock(ppm, fg, bg, add));
     }),
   );
+}
+
+/** A file of image/misc (text tiles of the original). */
+export function loadMisc(name: string): Promise<Uint8Array> {
+  return file(`image/misc/${name}.ppm`);
 }
 
 export async function loadLevelText(fileName: string): Promise<string> {

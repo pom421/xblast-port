@@ -4,6 +4,7 @@
 
 export * from "./constants.ts";
 export { Game, type Explosion, type GameOptions, type Player, type PlayerAction, type PlayerSetup } from "./game.ts";
+export { levelInfo, type LevelInfo } from "./info.ts";
 export { LevelError, parseLevel, type BlockGraphic, type Level } from "./level.ts";
 export * from "./net.ts";
 export { GameRandom } from "./rng.ts";

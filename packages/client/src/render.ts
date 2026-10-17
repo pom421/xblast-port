@@ -18,7 +18,26 @@ interface DrawItem {
   draw: () => void;
 }
 
-export function render(ctx: CanvasRenderingContext2D, game: Game, scene: Scene): void {
+/** A player sprite at a player position (imgRectSprite gives where each animation is drawn). */
+export function drawPlayer(
+  ctx: CanvasRenderingContext2D,
+  sprites: Sprite[],
+  anime: number,
+  x: number,
+  y: number,
+): void {
+  const [rx, ry, rw, rh] = spriteRects[anime] ?? spriteRects[0]!;
+  const image = sprites[anime];
+  if (image) ctx.drawImage(image, 0, 0, rw, rh, x + rx, y + ry, rw, rh);
+}
+
+/** `anime` overrides the animation of some players (level intro and end screens). */
+export function render(
+  ctx: CanvasRenderingContext2D,
+  game: Game,
+  scene: Scene,
+  anime?: (slot: number) => number | undefined,
+): void {
   const { blocks, common, players } = scene;
   /* maze */
   ctx.fillStyle = "#000";
@@ -54,17 +73,17 @@ export function render(ctx: CanvasRenderingContext2D, game: Game, scene: Scene):
       },
     });
   }
-  game.players.forEach((p) => {
-    if (!(p.spriteMode & SPM.MAPPED)) return;
+  game.players.forEach((p, slot) => {
+    const forced = anime?.(slot);
+    if (!(p.spriteMode & SPM.MAPPED) && forced === undefined) return;
     const look = players[p.look];
     if (!look) return;
     const y = p.morphed ? p.y + BASE_Y : p.y;
     items.push({
       depth: y + BLOCK_HEIGHT,
       draw: () => {
-        const [rx, ry, rw, rh] = spriteRects[p.anime] ?? spriteRects[0]!;
-        const image = (p.spriteMode & SPM.MASKED ? look.masks : look.frames)[p.anime];
-        if (image) ctx.drawImage(image, 0, 0, rw, rh, p.x + rx, y + ry, rw, rh);
+        if (forced !== undefined) drawPlayer(ctx, look.frames, forced, p.x, p.y);
+        else drawPlayer(ctx, p.spriteMode & SPM.MASKED ? look.masks : look.frames, p.anime, p.x, y);
       },
     });
   });

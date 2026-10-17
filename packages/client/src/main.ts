@@ -8,8 +8,11 @@ import {
   chooseLevel,
   Game,
   hashGame,
+  levelInfo,
   parseLevel,
   teamOfSlot,
+  type Level,
+  type LevelInfo,
   type LobbyPlayer,
   type MatchConfig,
   type NetAction,
@@ -25,26 +28,35 @@ import {
   loadPlayer,
   type LevelEntry,
   type PlayerLook,
+  type Sprite,
 } from "./assets.ts";
 import { KeyboardInput } from "./input.ts";
 import { playerCards, type PlayerCards } from "./player-cards.ts";
 import { keyLabel, loadKeyboardLayout, loadSettings, type PlayerSettings } from "./settings.ts";
 import { HEIGHT, WIDTH, render, type Scene } from "./render.ts";
+import { Board, drawLevelEnd, drawLevelIntro, loadScreens, type BoardPlayer, type ScreenAssets } from "./screens.ts";
 import { SoundPlayer } from "./sound.ts";
 import "./style.css";
 
 const FRAME_MS = 1000 / FRAME_RATE;
-const INTRO_FRAMES = 2 * FRAME_RATE;
-const RESULT_FRAMES = 3 * FRAME_RATE;
+/* online, the server sets the pace: fixed times instead of waiting for Space */
+const INTRO_FRAMES = 3 * FRAME_RATE;
+const END_FRAMES = FRAME_RATE;
 
+/**
+ * Screens of a round, like the original: level intro, play, level end (the
+ * winners cheer), score board; the winner of the match at the end. Locally,
+ * Space or Return goes to the next screen.
+ */
 type Phase =
   | { kind: "menu" }
   | { kind: "lobby" }
   | { kind: "intro"; frames: number }
   | { kind: "play" }
-  | { kind: "result"; frames: number }
+  | { kind: "end"; frames: number; message: string; winners: number[]; last: boolean }
+  | { kind: "scores"; board: Board }
+  | { kind: "winner"; board: Board; frames: number }
   | { kind: "waiting" }
-  | { kind: "over" }
   | { kind: "paused"; resume: Phase };
 
 /** Players of the match, by slot. */
@@ -99,6 +111,9 @@ const banner = $<HTMLDivElement>("#banner");
 
 let levels: LevelEntry[] = [];
 let common: Awaited<ReturnType<typeof loadCommon>>;
+let screens: ScreenAssets;
+/** sprites of the 6 default players: the audience of the score board */
+let defaultSprites: Promise<Sprite[][]> | null = null;
 let input: KeyboardInput;
 let sound: SoundPlayer | null = null;
 /** settings of the players of this computer */
@@ -111,6 +126,11 @@ let scene: Scene | null = null;
 let game: Game | null = null;
 let phase: Phase = { kind: "menu" };
 let victories: number[] = [];
+/** level of the round, and its intro texts */
+let level: Level | null = null;
+let info: LevelInfo = { player: [], level: [], extra: [] };
+/** team that won the last round (null: nobody) */
+let lastTeam: number | null = null;
 
 /* ------------------------------------------------------------------ */
 /* display                                                            */
@@ -123,6 +143,17 @@ function escapeHtml(text: string): string {
 function showOverlay(html: string | null): void {
   overlay.hidden = html === null;
   if (html !== null) overlay.innerHTML = html;
+}
+
+/** Hint under the board (the original shows it in the status bar). */
+function showBanner(html: string | null): void {
+  banner.hidden = html === null;
+  if (html !== null) banner.innerHTML = html;
+}
+
+/** Messages that wait for a key alternate with "Press Space or Return" (every 2 seconds). */
+function pressMessage(message: string, frames: number): string {
+  return Math.floor(frames / (2 * FRAME_RATE)) % 2 ? "Press Space or Return" : message;
 }
 
 const teamOf = (slot: number) => teamOfSlot(slot, roster.config);
@@ -165,7 +196,8 @@ async function loadScene(): Promise<void> {
 }
 
 async function beginRound(levelFile: string, seed: number): Promise<void> {
-  const level = parseLevel(await loadLevelText(levelFile));
+  level = parseLevel(await loadLevelText(levelFile));
+  info = levelInfo(level);
   scene = { ...scene!, blocks: await loadBlocks(level) };
   game = new Game({
     level,
@@ -174,25 +206,112 @@ async function beginRound(levelFile: string, seed: number): Promise<void> {
     players: roster.names.map((_, slot) => ({ team: teamOf(slot), bot: roster.bots[slot] })),
   });
   phase = { kind: "intro", frames: INTRO_FRAMES };
-  showOverlay(
-    `<h2>${escapeHtml(level.name)}</h2><p class="author">${escapeHtml(level.author)}</p>` +
-      `<p class="hint">${escapeHtml(level.hint)}</p>`,
-  );
-  render(ctx, game, scene);
+  showOverlay(null);
+  drawIntro();
   timeBar.style.width = "100%";
   updateHud();
 }
 
-function roundMessage(): string {
-  const { winnerTeam, outOfTime } = game!.result();
-  if (winnerTeam === null) return outOfTime ? "Out of time" : "Draw game";
-  sound?.play("won", WIDTH / 2);
-  return `${teamName(winnerTeam)} ${roster.config.teams ? "win" : "wins"}`;
+/** LevelIntro: "Press Space or Return" locally, a countdown online (DoWait). */
+function drawIntro(): void {
+  if (phase.kind !== "intro") return;
+  const message = match?.mode === "online" ? `${Math.ceil(phase.frames / FRAME_RATE)}` : "Press Space or Return";
+  drawLevelIntro(ctx, screens, game!, scene!, level!, info, message);
 }
 
-function championMessage(): string | null {
-  const champion = victories.findIndex((v) => v >= roster.config.wins);
-  return champion < 0 ? null : `${teamName(teamOf(champion))} won the match!`;
+function startPlay(): void {
+  phase = { kind: "play" };
+  showBanner(null);
+  render(ctx, game!, scene!);
+  input.take();
+  startMusic();
+}
+
+/** LevelResult: the message of the end of a round. */
+function roundMessage(): string {
+  const { winnerTeam, outOfTime } = game!.result();
+  if (outOfTime) return "Out of Time";
+  if (winnerTeam === null) return "Draw Game";
+  // the message of one of the winners, at random
+  const won = game!.players.flatMap((p, slot) => (p.team === winnerTeam && p.lives > 0 ? [slot] : []));
+  const slot = won[Math.floor(Math.random() * won.length)] ?? 0;
+  return `${roster.names[slot]} wins`;
+}
+
+/** Slot of a player of the team that won the match, or -1. */
+function champion(): number {
+  return victories.findIndex((v) => v >= roster.config.wins);
+}
+
+/** LevelEnd: the message, and the players of the winning team cheer. */
+function endRound(message: string, winnerTeam: number | null): void {
+  lastTeam = winnerTeam;
+  if (winnerTeam !== null) sound?.play("won", WIDTH / 2);
+  const winners = roster.names.flatMap((_, slot) => (teamOf(slot) === winnerTeam ? [slot] : []));
+  phase = { kind: "end", frames: 0, message, winners, last: champion() >= 0 };
+  showBanner(null);
+  updateHud();
+}
+
+function boardPlayers(): BoardPlayer[] {
+  // names without the "(CPU)" of the computer players: the boxes are small
+  return roster.names.map((name, slot) => ({
+    name: roster.looks[slot]?.name ?? name,
+    team: teamOf(slot),
+    victories: victories[slot] ?? 0,
+    inactive: false,
+  }));
+}
+
+async function boardScene(): Promise<{ players: Sprite[][]; defaults: Sprite[][] }> {
+  defaultSprites ??= Promise.all(defaultPlayers.map(async (look) => (await loadPlayer(look)).frames));
+  return { players: scene!.players.map((p) => p.frames), defaults: await defaultSprites };
+}
+
+/** After the level end: the score board, or the winner of the match. */
+async function nextScreen(last: boolean): Promise<void> {
+  phase = { kind: "waiting" };
+  const sprites = await boardScene();
+  const bomb = common.bombs[0]![0]!;
+  if (last) {
+    const board = Board.winner(screens, sprites, bomb, boardPlayers(), teamOf(champion()));
+    phase = { kind: "winner", board, frames: 0 };
+    sound?.play("finale", WIDTH / 2);
+  } else {
+    const maxNumWins = Math.max(0, ...victories);
+    const board = Board.scores(screens, sprites, bomb, boardPlayers(), lastTeam, maxNumWins, roster.config.wins);
+    phase = { kind: "scores", board };
+    sound?.play("applause", WIDTH / 2);
+  }
+}
+
+/** Space, Return or a click on the board, on the screens between the rounds. */
+function advance(): void {
+  if (!match) return;
+  if (match.mode === "local") {
+    switch (phase.kind) {
+      case "intro":
+        startPlay();
+        return;
+      case "end":
+        void nextScreen(phase.last);
+        return;
+      case "scores":
+        // loading the next level takes several frames: start it only once
+        phase = { kind: "waiting" };
+        void nextLocalRound(match);
+        return;
+      case "winner":
+        backToMenu();
+        return;
+      default:
+        return;
+    }
+  }
+  if (phase.kind === "winner") {
+    phase = { kind: "lobby" };
+    showLobby(match, undefined, match.title);
+  }
 }
 
 /** One frame of the game, with the inputs of every player. */
@@ -213,23 +332,28 @@ function tick(): void {
   if (!game || !scene || !match) return;
   switch (phase.kind) {
     case "intro":
-      if (--phase.frames <= 0) {
-        phase = { kind: "play" };
-        showOverlay(null);
-        input.take();
-        startMusic();
+      if (match.mode === "online") {
+        if (--phase.frames <= 0) startPlay();
+        else if (phase.frames % FRAME_RATE === 0) drawIntro();
       }
       break;
     case "play":
       if (match.mode === "local") tickLocal();
       else tickOnline(match);
       break;
-    case "result":
-      if (--phase.frames <= 0 && match.mode === "local") {
-        // loading the next level takes several frames: start it only once
-        phase = { kind: "waiting" };
-        void nextLocalRound(match);
-      }
+    case "end": {
+      const message = match.mode === "local" ? pressMessage(phase.message, phase.frames) : phase.message;
+      drawLevelEnd(ctx, screens, game, scene, phase.winners, phase.frames++, message);
+      if (match.mode === "online" && phase.frames === END_FRAMES) void nextScreen(phase.last);
+      break;
+    }
+    case "scores":
+      phase.board.tick();
+      phase.board.draw(ctx, null);
+      break;
+    case "winner":
+      phase.board.tick();
+      phase.board.draw(ctx, pressMessage("CONGRATULATIONS!", phase.frames++));
       break;
     default:
       break;
@@ -265,6 +389,7 @@ async function startLocal(): Promise<void> {
     seed: crypto.getRandomValues(new Uint32Array(1))[0]!,
   };
   victories = roster.names.map(() => 0);
+  phase = { kind: "waiting" };
   setupForm.hidden = true;
   showOverlay("<p>Loading…</p>");
   await loadScene();
@@ -287,7 +412,7 @@ function tickLocal(): void {
   // computer players get their inputs from the game itself
   playFrame(input.take().slice(0, roster.bots.filter((b) => !b).length));
   if (!game!.over) {
-    banner.hidden = !humansOut();
+    showBanner(humansOut() ? "You are out: <strong>Enter</strong> to fast-forward to the end of the round" : null);
     return;
   }
   finishLocalRound();
@@ -307,25 +432,15 @@ function fastForward(): void {
 }
 
 function finishLocalRound(abandoned = false): void {
-  banner.hidden = true;
   sound?.stopMusic();
+  showOverlay(null);
   if (abandoned) {
-    phase = { kind: "result", frames: RESULT_FRAMES };
-    showOverlay("<h2>Round abandoned</h2>");
+    endRound("Round abandoned", null);
     return;
   }
   const { winnerTeam } = game!.result();
   if (winnerTeam !== null) roster.names.forEach((_, slot) => teamOf(slot) === winnerTeam && victories[slot]!++);
-  const message = roundMessage();
-  const champion = championMessage();
-  updateHud();
-  if (champion) {
-    phase = { kind: "over" };
-    showOverlay(`<h2>${escapeHtml(champion)}</h2><p>Enter: play again. Escape: menu.</p>`);
-  } else {
-    phase = { kind: "result", frames: RESULT_FRAMES };
-    showOverlay(`<h2>${escapeHtml(message)}</h2>`);
-  }
+  endRound(roundMessage(), winnerTeam);
 }
 
 /* ------------------------------------------------------------------ */
@@ -424,6 +539,7 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       if (phase.kind === "lobby") showLobby(online, message.message, online.title);
       break;
     case "match":
+      phase = { kind: "waiting" };
       roster = {
         names: message.players.map((p) => p.name),
         looks: message.players.map((p) => ({ name: p.name, ...(p.look ?? defaultPlayers[p.slot]!) })),
@@ -444,21 +560,22 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
     case "frame":
       if (message.round === online.round) online.frames.set(message.frame, message.actions);
       break;
-    case "result": {
+    case "result":
       victories = message.victories;
-      const text = roundMessage();
-      updateHud();
-      phase = { kind: "result", frames: RESULT_FRAMES };
-      showOverlay(`<h2>${escapeHtml(text)}</h2>${message.desync ? '<p class="error">Desynchronised game!</p>' : ""}`);
+      endRound(roundMessage(), game!.result().winnerTeam);
+      if (message.desync) showBanner('<span class="error">Desynchronised game!</span>');
+      break;
+    case "matchOver": {
+      victories = message.victories;
+      const slot = champion();
+      online.title = slot < 0 ? "Match over" : `${teamName(teamOf(slot))} won the match!`;
+      // the level end screen of the last round shows first
+      if (phase.kind !== "end") {
+        phase = { kind: "lobby" };
+        showLobby(online, undefined, online.title);
+      }
       break;
     }
-    case "matchOver":
-      victories = message.victories;
-      updateHud();
-      phase = { kind: "lobby" };
-      online.title = championMessage() ?? "Match over";
-      showLobby(online, undefined, online.title);
-      break;
   }
 }
 
@@ -520,7 +637,7 @@ function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
 function pause(): void {
   if (phase.kind !== "play" && phase.kind !== "intro") return;
   phase = { kind: "paused", resume: phase };
-  banner.hidden = true;
+  showBanner(null);
   showOverlay(
     `<h2>Pause</h2><div class="menu">` +
       `<button type="button" data-pause="resume">Resume (P or Escape)</button>` +
@@ -572,7 +689,7 @@ function toggleMusic(): void {
 }
 
 function backToMenu(): void {
-  banner.hidden = true;
+  showBanner(null);
   sound?.stopMusic();
   if (match?.mode === "online") {
     const online = match;
@@ -619,7 +736,7 @@ function loop(now: number): void {
 
 async function init(): Promise<void> {
   showOverlay("<p>Loading…</p>");
-  [levels, common] = await Promise.all([loadLevelIndex(), loadCommon(), loadKeyboardLayout()]);
+  [levels, common, screens] = await Promise.all([loadLevelIndex(), loadCommon(), loadScreens(), loadKeyboardLayout()]);
   const select = $<HTMLSelectElement>("#level");
   for (const level of levels) select.add(new Option(`${level.name} (${level.file})`, level.file));
   $<HTMLInputElement>("#server").placeholder = defaultServer();
@@ -658,7 +775,8 @@ async function init(): Promise<void> {
     const action = (e.target as HTMLElement).closest<HTMLElement>("[data-pause]")?.dataset.pause;
     if (action) pauseAction(action);
   });
-  banner.addEventListener("click", () => fastForward());
+  banner.addEventListener("click", () => (phase.kind === "play" ? fastForward() : advance()));
+  canvas.addEventListener("click", advance);
   window.addEventListener("keydown", (e) => {
     if (input.capturing) return;
     const local = match?.mode === "local";
@@ -692,8 +810,12 @@ async function init(): Promise<void> {
     if (e.code === "KeyM" && phase.kind !== "menu" && !settings.some((p) => Object.values(p.keys).includes("KeyM"))) {
       toggleMusic();
     }
+    if ((e.code === "Space" || e.code === "Enter") && ["intro", "end", "scores", "winner"].includes(phase.kind)) {
+      e.preventDefault();
+      advance();
+      return;
+    }
     if (e.code === "Escape" && phase.kind !== "menu") backToMenu();
-    if (e.code === "Enter" && phase.kind === "over" && local) void startLocal();
   });
   updateForm();
   showOverlay(null);

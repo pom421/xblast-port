@@ -44,6 +44,9 @@ const sounds: Record<string, [string, boolean]> = {
   slay: ["xbslay", true],
   life: ["xblife", true],
   newcloak: ["xbcloakx", true],
+  /* screens between the rounds */
+  applause: ["xb_appl", false],
+  finale: ["xbfin", false],
 };
 
 export class SoundPlayer {
