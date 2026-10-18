@@ -92,6 +92,16 @@ lives in the server's memory. Put it behind HTTPS (the host's proxy, or Caddy):
 the client then connects with `wss://` on its own. The GPL asks to offer the
 sources of the client to its players: link this repository.
 
+On your own server, `deploy/compose.yaml` runs the game behind Caddy, which
+gets the certificate and forwards the WebSocket upgrade:
+
+```bash
+DOMAIN=xblast.example.org docker compose -f deploy/compose.yaml up -d
+```
+
+The server pings a socket silent for 20 s, so proxies that cut idle
+connections (nginx after 60 s by default) keep players in the lobby.
+
 ## Layout
 
 | Package           | Runs in    | Role                                                    |
