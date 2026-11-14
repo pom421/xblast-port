@@ -42,6 +42,9 @@ export const PLAYER_SHAPES = [
   "xmas",
 ] as const;
 
+/** Online, seconds of the level intro: clients send no input meanwhile. */
+export const INTRO_SECONDS = 3;
+
 /** Longest name of a player. */
 export const MAX_NAME = 16;
 /** Bounds of a match: lives of a player, victories to win. */
@@ -86,6 +89,8 @@ export type ServerMessage =
   | { type: "match"; config: MatchConfig; players: LobbyPlayer[] }
   | { type: "round"; round: number; level: string; seed: number; delay: number }
   | { type: "frame"; round: number; frame: number; actions: NetAction[] }
+  /** the round waits for these clients: they are removed from the match in `seconds` */
+  | { type: "stall"; clients: number[]; seconds: number }
   | { type: "result"; round: number; victories: number[]; desync: boolean }
   | { type: "matchOver"; victories: number[] };
 

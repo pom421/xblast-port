@@ -1,6 +1,6 @@
 import { expect, test } from "vite-plus/test";
-import type { ServerMessage } from "@xblast/sim";
-import { INPUT_DELAY, Room } from "../src/room.ts";
+import { INTRO_SECONDS, type ServerMessage } from "@xblast/sim";
+import { INPUT_DELAY, Room, STALL_GRACE, STALL_TIMEOUT } from "../src/room.ts";
 
 const levels = [{ file: "Test.xal", players: 6, gameMode: 1023 }];
 
@@ -8,8 +8,12 @@ function setup(clients: number) {
   const scheduled: (() => void)[] = [];
   const room = new Room({ levels, random: () => 0.5, schedule: (callback) => scheduled.push(callback) });
   const inbox = Array.from({ length: clients }, () => [] as ServerMessage[]);
-  inbox.forEach((messages, i) => room.connect({ id: i + 1, send: (m) => messages.push(m) }));
-  return { room, inbox, scheduled };
+  /** clients closed by the room */
+  const closed: number[] = [];
+  inbox.forEach((messages, i) =>
+    room.connect({ id: i + 1, send: (m) => messages.push(m), close: () => closed.push(i + 1) }),
+  );
+  return { room, inbox, scheduled, closed };
 }
 
 const of = <T extends ServerMessage["type"]>(messages: ServerMessage[], type: T) =>
@@ -152,4 +156,53 @@ test("the host can add computer players, removed at the end of the match", () =>
       .at(-1)!
       .players.map((p) => p.name),
   ).toEqual(["Olaf"]);
+});
+
+test("a round that waits for a client counts down, then goes on without it", () => {
+  const { room, inbox, closed } = setup(3);
+  for (const id of [1, 2, 3]) room.receive(id, { type: "join", players: [{ name: `Player ${id}` }] });
+  const seconds = (n: number) => {
+    for (let i = 0; i < n; i++) room.second();
+  };
+  // nothing is waited for in the lobby
+  seconds(60);
+  room.receive(1, { type: "start", config: { lives: 1, wins: 2, teams: false } });
+  // the level intro, then the grace: nobody is told
+  seconds(INTRO_SECONDS + STALL_GRACE - 1);
+  expect(of(inbox[0]!, "stall")).toHaveLength(0);
+  room.receive(1, { type: "input", round: 1, frame: 4, actions: [[1, 0, 0]] });
+  seconds(1);
+  expect(of(inbox[2]!, "stall")).toEqual([{ type: "stall", clients: [2, 3], seconds: STALL_TIMEOUT }]);
+  // client 2 answers: the countdown goes on for client 3 only
+  room.receive(2, { type: "input", round: 1, frame: 4, actions: [[2, 0, 0]] });
+  seconds(STALL_TIMEOUT - 1);
+  expect(of(inbox[0]!, "stall").at(-1)).toEqual({ type: "stall", clients: [3], seconds: 1 });
+  expect(closed).toEqual([]);
+  seconds(1);
+  expect(closed).toEqual([3]);
+  // the frame is sent without client 3, whose player stands still
+  expect(of(inbox[0]!, "frame").at(-1)).toEqual({
+    type: "frame",
+    round: 1,
+    frame: 4,
+    actions: [
+      [1, 0, 0],
+      [2, 0, 0],
+      [5, 0, 0],
+    ],
+  });
+  expect(of(inbox[2]!, "frame").at(-1)!.frame).toBe(3);
+
+  // end of the round: a client that never reports it is waited for, then removed
+  room.receive(1, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 0 });
+  seconds(STALL_GRACE);
+  expect(of(inbox[0]!, "stall").at(-1)).toEqual({ type: "stall", clients: [2], seconds: STALL_TIMEOUT });
+  seconds(STALL_TIMEOUT);
+  expect(closed).toEqual([3, 2]);
+  expect(of(inbox[0]!, "result")[0]).toEqual({ type: "result", round: 1, victories: [1, 0, 0], desync: false });
+  // between two rounds, nothing is waited for
+  const stalls = of(inbox[0]!, "stall").length;
+  seconds(60);
+  expect(of(inbox[0]!, "stall")).toHaveLength(stalls);
+  expect(closed).toEqual([3, 2]);
 });

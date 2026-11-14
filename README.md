@@ -70,8 +70,11 @@ How it works: the simulation is deterministic, so clients only exchange their
 inputs (lockstep). Each input is used 3 frames (150 ms) after it is sent; the
 server sends a frame to everyone once it has the inputs of every player, and
 compares a hash of the game state at the end of each round to detect a
-desynchronisation. In development, run `vp run @xblast/server#dev` next to
-`vp run dev` (Vite forwards `/ws` to the server).
+desynchronisation. A client that stays silent (a hidden tab, a lost network)
+freezes the round of everyone: after 5 s the others see a 15 s countdown, then
+the client is removed and its player stands still. In development, run
+`vp run @xblast/server#dev` next to `vp run dev` (Vite forwards `/ws` to the
+server).
 
 `bun packages/server/test/bots.ts [bots]` plays a whole match with headless bots
 against a running server (started with `MAX_RATE=100000`: the bots play faster
