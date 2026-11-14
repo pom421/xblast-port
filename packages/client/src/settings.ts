@@ -2,7 +2,7 @@
 // the original player config) and keys. Kept in the browser (localStorage).
 
 import { MAX_NAME, PLAYER_SHAPES } from "@xblast/sim";
-import type { PlayerLook } from "./assets.ts";
+import { defaultPlayers, type PlayerLook } from "./assets.ts";
 
 /** The 6 colors of a player, in the order of the sprite layers. */
 export const colorNames = ["Helmet", "Face", "Body", "Hands & feet", "Arms & legs", "Backpack"] as const;
@@ -34,52 +34,35 @@ export interface PlayerSettings extends PlayerLook {
 }
 
 /** Keys are physical keys (KeyboardEvent.code): same places on AZERTY and QWERTY. */
-export const defaultSettings: PlayerSettings[] = [
+const defaultKeys: Keys[] = [
   {
-    name: "Olaf",
-    shape: "tall",
-    colors: ["#000000", "#d0b088", "#000000", "#f8a000", "#000000", "#f8a000"],
-    keys: {
-      up: "ArrowUp",
-      left: "ArrowLeft",
-      down: "ArrowDown",
-      right: "ArrowRight",
-      bomb: "Space",
-      stop: "ShiftLeft",
-      special: "Tab",
-    },
-    releaseStops: false,
+    up: "ArrowUp",
+    left: "ArrowLeft",
+    down: "ArrowDown",
+    right: "ArrowRight",
+    bomb: "Space",
+    stop: "ShiftLeft",
+    special: "Tab",
   },
+  { up: "KeyW", left: "KeyA", down: "KeyS", right: "KeyD", bomb: "KeyF", stop: "KeyE", special: "KeyR" },
+  { up: "KeyI", left: "KeyJ", down: "KeyK", right: "KeyL", bomb: "KeyH", stop: "KeyU", special: "KeyO" },
   {
-    name: "Alex",
-    shape: "girl",
-    colors: ["#f81090", "#f8a078", "#d870d0", "#00f878", "#4068e0", "#f81090"],
-    keys: { up: "KeyW", left: "KeyA", down: "KeyS", right: "KeyD", bomb: "KeyF", stop: "KeyE", special: "KeyR" },
-    releaseStops: false,
-  },
-  {
-    name: "Harald",
-    shape: "fat",
-    colors: ["#f8f800", "#f8a078", "#00f878", "#f84000", "#f8f8e0", "#4068e0"],
-    keys: { up: "KeyI", left: "KeyJ", down: "KeyK", right: "KeyL", bomb: "KeyH", stop: "KeyU", special: "KeyO" },
-    releaseStops: false,
-  },
-  {
-    name: "Rodi",
-    shape: "normal",
-    colors: ["#f80000", "#f8a078", "#f80000", "#208820", "#c85858", "#88b888"],
-    keys: {
-      up: "Numpad8",
-      left: "Numpad4",
-      down: "Numpad2",
-      right: "Numpad6",
-      bomb: "Numpad0",
-      stop: "Numpad5",
-      special: "NumpadDecimal",
-    },
-    releaseStops: false,
+    up: "Numpad8",
+    left: "Numpad4",
+    down: "Numpad2",
+    right: "Numpad6",
+    bomb: "Numpad0",
+    stop: "Numpad5",
+    special: "NumpadDecimal",
   },
 ];
+
+/** The 4 keyboard players: the first default players of XBlast, with their keys. */
+export const defaultSettings: PlayerSettings[] = defaultKeys.map((keys, i) => ({
+  ...structuredClone(defaultPlayers[i]!),
+  keys,
+  releaseStops: false,
+}));
 
 const STORAGE_KEY = "xblast.players";
 
