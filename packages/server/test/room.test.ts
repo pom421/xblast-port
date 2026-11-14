@@ -65,14 +65,70 @@ test("round results count victories, detect desyncs, end the match", () => {
   room.receive(1, { type: "start", config: { lives: 1, wins: 2, teams: false } });
   room.receive(1, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 1 });
   expect(of(inbox[0]!, "result")).toHaveLength(0);
+  // two clients with different games: no result to trust, nobody wins
   room.receive(2, { type: "over", round: 1, frame: 100, hash: 43, winnerTeam: 1 });
-  expect(of(inbox[0]!, "result")[0]).toEqual({ type: "result", round: 1, victories: [0, 1], desync: true });
-  scheduled.shift()!();
-  expect(of(inbox[0]!, "round").at(-1)!.round).toBe(2);
-  room.receive(1, { type: "over", round: 2, frame: 80, hash: 7, winnerTeam: 1 });
-  room.receive(2, { type: "over", round: 2, frame: 80, hash: 7, winnerTeam: 1 });
+  expect(of(inbox[0]!, "result")[0]).toEqual({ type: "result", round: 1, victories: [0, 0], desync: true });
+  // the round is over: a late report changes nothing
+  room.receive(1, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 1 });
+  expect(of(inbox[0]!, "result")).toHaveLength(1);
+  for (const round of [2, 3]) {
+    scheduled.shift()!();
+    expect(of(inbox[0]!, "round").at(-1)!.round).toBe(round);
+    room.receive(1, { type: "over", round, frame: 80, hash: 7, winnerTeam: 1 });
+    room.receive(2, { type: "over", round, frame: 80, hash: 7, winnerTeam: 1 });
+  }
   expect(of(inbox[0]!, "matchOver")[0]!.victories).toEqual([0, 2]);
   expect(of(inbox[0]!, "lobby").at(-1)!.playing).toBe(false);
+});
+
+test("a client alone cannot choose the winner", () => {
+  const { room, inbox } = setup(4);
+  for (const id of [1, 2, 3]) room.receive(id, { type: "join", players: [{ name: `Player ${id}` }] });
+  room.receive(1, { type: "start", config: { lives: 1, wins: 1, teams: false } });
+  // client 4 does not play: its report is ignored, and nobody waits for it
+  room.receive(4, { type: "over", round: 1, frame: 1, hash: 9, winnerTeam: 2 });
+  // client 3 lies, and reports twice
+  room.receive(3, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 2 });
+  room.receive(3, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 2 });
+  room.receive(1, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 0 });
+  expect(of(inbox[0]!, "result")).toHaveLength(0);
+  room.receive(2, { type: "over", round: 1, frame: 100, hash: 42, winnerTeam: 0 });
+  expect(of(inbox[0]!, "result")[0]).toEqual({ type: "result", round: 1, victories: [1, 0, 0], desync: true });
+});
+
+test("inputs are taken from players only, for the next frames only", () => {
+  const { room, inbox } = setup(3);
+  room.receive(1, { type: "join", players: [{ name: "Olaf" }, { name: "Alex" }] });
+  room.receive(2, { type: "join", players: [{ name: "Harald" }] });
+  room.receive(1, { type: "start", config: { lives: 2, wins: 3, teams: false } });
+  const sent = () => of(inbox[0]!, "frame").map((f) => f.frame);
+  // a frame too far ahead, a client that does not play, the wrong number of players
+  room.receive(2, { type: "input", round: 1, frame: 4 + INPUT_DELAY, actions: [[1, 0, 0]] });
+  room.receive(3, { type: "input", round: 1, frame: 4, actions: [[1, 0, 0]] });
+  room.receive(1, { type: "input", round: 1, frame: 4, actions: [[1, 0, 0]] });
+  room.receive(2, { type: "input", round: 1, frame: 4, actions: [[3, 0, 0]] });
+  expect(sent()).toEqual([1, 2, 3]);
+  room.receive(1, {
+    type: "input",
+    round: 1,
+    frame: 4,
+    actions: [
+      [1, 0, 0],
+      [2, 0, 0],
+    ],
+  });
+  // the first inputs of a frame are kept
+  room.receive(2, { type: "input", round: 1, frame: 4, actions: [[4, 1, 1]] });
+  expect(of(inbox[0]!, "frame").at(-1)).toEqual({
+    type: "frame",
+    round: 1,
+    frame: 4,
+    actions: [
+      [1, 0, 0],
+      [2, 0, 0],
+      [3, 0, 0],
+    ],
+  });
 });
 
 test("the host can add computer players, removed at the end of the match", () => {

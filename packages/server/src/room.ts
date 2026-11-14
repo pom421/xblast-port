@@ -5,17 +5,17 @@
 import {
   chooseLevel,
   idleAction,
+  MAX_PLAYER,
   teamOfSlot,
   type ClientMessage,
+  type JoinPlayer,
   type LevelChoice,
   type LobbyPlayer,
   type MatchConfig,
   type NetAction,
-  type PlayerLookData,
   type ServerMessage,
 } from "@xblast/sim";
 
-export const MAX_PLAYERS = 6;
 /** frames between an input and its use: 3 × 50 ms */
 export const INPUT_DELAY = 3;
 
@@ -42,6 +42,8 @@ export class Room {
   private players: LobbyPlayer[] = [];
   private host: number | null = null;
   private playing = false;
+  /** a round is being played: inputs and end reports are expected */
+  private running = false;
   private config: MatchConfig = { lives: 2, wins: 3, teams: false };
   private round = 0;
   private inputs = new Map<number, (NetAction | null)[]>();
@@ -77,10 +79,11 @@ export class Room {
     this.broadcast(this.lobby());
   }
 
+  /** A message checked by parseClientMessage: types and bounds are right, the sender may still lie. */
   receive(id: number, message: ClientMessage): void {
     switch (message.type) {
       case "join":
-        this.join(id, Array.isArray(message.players) ? message.players : []);
+        this.join(id, message.players);
         break;
       case "start":
         this.start(id, message.config);
@@ -89,26 +92,21 @@ export class Room {
         this.input(id, message.round, message.frame, message.actions);
         break;
       case "over":
-        if (message.round === this.round && this.playing) {
-          this.reports.set(id, { hash: message.hash, winnerTeam: message.winnerTeam });
-          this.checkOver();
-        }
+        this.report(id, message.round, { hash: message.hash, winnerTeam: message.winnerTeam });
         break;
     }
   }
 
-  private join(id: number, joining: ({ name: string } & Partial<PlayerLookData>)[]): void {
+  private join(id: number, joining: JoinPlayer[]): void {
     const client = this.clients.get(id);
     if (!client) return;
     if (this.playing) return client.send({ type: "error", message: "A match is being played, wait for its end." });
     if (this.players.some((p) => p.client === id)) return client.send({ type: "error", message: "Already joined." });
-    const free = MAX_PLAYERS - this.players.length;
-    const wanted = joining.slice(0, Math.max(0, free));
+    const wanted = joining.slice(0, MAX_PLAYER - this.players.length);
     if (wanted.length === 0) return client.send({ type: "error", message: "The game is full (6 players)." });
-    const slots = wanted.map((p) => {
+    const slots = wanted.map(({ name, look }) => {
       const slot = this.players.length;
-      const name = (typeof p.name === "string" ? p.name.trim().slice(0, 16) : "") || "Player";
-      this.players.push({ slot, name, client: id, look: sanitizeLook(p) });
+      this.players.push({ slot, name: name.trim() || "Player", client: id, look });
       return slot;
     });
     this.host ??= id;
@@ -118,7 +116,7 @@ export class Room {
 
   private start(id: number, config: MatchConfig): void {
     if (id !== this.host || this.playing) return;
-    const bots = Math.min(MAX_PLAYERS - this.players.length, Math.max(0, Math.trunc(config.bots ?? 0)));
+    const bots = Math.min(MAX_PLAYER - this.players.length, config.bots ?? 0);
     if (this.players.length + bots < 2) {
       this.clients.get(id)?.send({ type: "error", message: "At least 2 players are needed (computer players count)." });
       return;
@@ -129,12 +127,7 @@ export class Room {
     const total = this.players.length;
     // teams of 2 need an even number of players, at least 4
     const teams = config.teams && total >= 4 && total % 2 === 0;
-    this.config = {
-      lives: Math.min(9, Math.max(1, Math.trunc(config.lives))),
-      wins: Math.min(9, Math.max(1, Math.trunc(config.wins))),
-      teams,
-      bots,
-    };
+    this.config = { lives: config.lives, wins: config.wins, teams, bots };
     this.playing = true;
     this.round = 0;
     this.victories = this.players.map(() => 0);
@@ -145,6 +138,7 @@ export class Room {
 
   private startRound(): void {
     this.round++;
+    this.running = true;
     this.reports.clear();
     this.inputs = new Map();
     this.nextFrame = 1;
@@ -161,22 +155,33 @@ export class Room {
   }
 
   private input(id: number, round: number, frame: number, actions: NetAction[]): void {
-    if (!this.playing || round !== this.round || frame < this.nextFrame) return;
+    if (!this.running || round !== this.round) return;
+    // a client only plays the frames sent: its inputs are for the INPUT_DELAY next ones
+    if (frame < this.nextFrame || frame >= this.nextFrame + INPUT_DELAY) return;
     const own = this.players.filter((p) => p.client === id);
+    if (own.length === 0 || actions.length !== own.length) return;
     let row = this.inputs.get(frame);
     if (!row) {
       row = this.players.map(() => null);
       this.inputs.set(frame, row);
     }
     own.forEach((p, i) => {
-      row[p.slot] = sanitize(actions[i]);
+      row[p.slot] ??= actions[i]!;
     });
     this.flush();
   }
 
+  /** End of the round seen by a client: only one that plays, and once. */
+  private report(id: number, round: number, report: OverReport): void {
+    if (!this.running || round !== this.round) return;
+    if (this.reports.has(id) || !this.players.some((p) => p.client === id)) return;
+    this.reports.set(id, report);
+    this.checkOver();
+  }
+
   /** Sends every frame whose inputs are complete (missing players: nothing pressed). */
   private flush(): void {
-    if (!this.playing) return;
+    if (!this.running) return;
     for (;;) {
       const row = this.inputs.get(this.nextFrame);
       if (!row) return;
@@ -191,18 +196,22 @@ export class Room {
 
   /** Once every connected client has finished the round: result, then next round or end. */
   private checkOver(): void {
-    if (!this.playing || this.reports.size === 0) return;
+    if (!this.running || this.reports.size === 0) return;
     const connected = new Set(this.players.map((p) => p.client).filter((c) => this.clients.has(c)));
     if (![...connected].every((c) => this.reports.has(c))) return;
     const reports = [...this.reports.values()];
-    const desync = reports.some((r) => r.hash !== reports[0]!.hash);
-    const winnerTeam = reports[0]!.winnerTeam;
+    const same = (a: OverReport, b: OverReport) => a.hash === b.hash && a.winnerTeam === b.winnerTeam;
+    const desync = reports.some((r) => !same(r, reports[0]!));
+    // the result of most clients: one client alone cannot choose the winner
+    const agreed = reports.find((r) => reports.filter((o) => same(r, o)).length * 2 > reports.length);
+    const winnerTeam = agreed?.winnerTeam ?? null;
     if (winnerTeam !== null) {
       this.players.forEach((p) => {
         if (teamOfSlot(p.slot, this.config) === winnerTeam) this.victories[p.slot]!++;
       });
     }
     const round = this.round;
+    this.running = false;
     this.reports.clear();
     this.broadcast({ type: "result", round, victories: this.victories, desync });
     if (this.victories.some((v) => v >= this.config.wins)) {
@@ -217,6 +226,7 @@ export class Room {
 
   private stop(): void {
     this.playing = false;
+    this.running = false;
     // players who left during the match leave the lobby now
     this.players = this.players.filter((p) => this.clients.has(p.client)).map((p, slot) => ({ ...p, slot }));
     if (this.host !== null && !this.clients.has(this.host)) this.host = this.players[0]?.client ?? null;
@@ -230,24 +240,4 @@ export class Room {
   private broadcast(message: ServerMessage): void {
     for (const client of this.clients.values()) client.send(message);
   }
-}
-
-/** A look sent by a client: one of the known shapes and 6 colors, else none. */
-function sanitizeLook(p: Partial<PlayerLookData>): PlayerLookData | undefined {
-  const shapes = ["normal", "tall", "girl", "fat", "cowboy", "felix", "golem", "iceman", "insect", "jedi"];
-  const more = ["kenny", "mecha", "ping", "punk", "skull", "sticky", "tutorial", "wuschel", "wusel", "xmas"];
-  if (typeof p.shape !== "string" || ![...shapes, ...more].includes(p.shape)) return undefined;
-  if (!Array.isArray(p.colors) || p.colors.length !== 6) return undefined;
-  if (!p.colors.every((c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c))) return undefined;
-  return { shape: p.shape, colors: p.colors };
-}
-
-function sanitize(action: NetAction | undefined): NetAction {
-  if (!Array.isArray(action)) return idleAction();
-  const dir = Number(action[0]);
-  return [
-    (Number.isInteger(dir) && dir >= 0 && dir <= 5 ? dir : 5) as NetAction[0],
-    action[1] ? 1 : 0,
-    action[2] ? 1 : 0,
-  ];
 }

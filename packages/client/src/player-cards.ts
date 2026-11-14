@@ -1,6 +1,7 @@
 // Settings panel of the players of this computer: name, shape, colors and
 // keys. Keys are chosen by pressing them; everything is saved in the browser.
 
+import { MAX_NAME, PLAYER_SHAPES } from "@xblast/sim";
 import { loadPreview } from "./assets.ts";
 import {
   colorNames,
@@ -8,7 +9,6 @@ import {
   keyActions,
   keyLabel,
   saveSettings,
-  shapes,
   type Keys,
   type PlayerSettings,
 } from "./settings.ts";
@@ -33,8 +33,8 @@ export function playerCards(
       <legend>Player ${i + 1}</legend>
       <canvas class="preview" width="64" height="78" aria-label="Look of player ${i + 1}"></canvas>
       <div class="card-fields">
-        <label>Name <input data-field="name" maxlength="16" value="${escape(s.name)}" /></label>
-        <label>Shape <select data-field="shape">${shapes.map((shape) => `<option${shape === s.shape ? " selected" : ""}>${shape}</option>`).join("")}</select></label>
+        <label>Name <input data-field="name" maxlength="${MAX_NAME}" value="${escape(s.name)}" /></label>
+        <label>Shape <select data-field="shape">${PLAYER_SHAPES.map((shape) => `<option${shape === s.shape ? " selected" : ""}>${shape}</option>`).join("")}</select></label>
         <div class="colors">${colorNames.map((name, k) => `<input type="color" data-color="${k}" value="${s.colors[k]}" title="${name}" aria-label="${name}" />`).join("")}</div>
         <div class="keys">${keyActions.map(([action, label]) => `<button type="button" data-key="${action}" title="Click, then press a key">${label} <kbd>${escape(keyLabel(s.keys[action]))}</kbd></button>`).join("")}</div>
         <label><input type="checkbox" data-field="releaseStops"${s.releaseStops ? " checked" : ""} /> Releasing a direction stops</label>
@@ -69,7 +69,7 @@ export function playerCards(
     if (!card) return;
     const i = Number(card.dataset.player);
     const s = settings[i]!;
-    if (target.dataset.field === "name") s.name = target.value.slice(0, 16) || defaultSettings[i]!.name;
+    if (target.dataset.field === "name") s.name = target.value.slice(0, MAX_NAME) || defaultSettings[i]!.name;
     else if (target.dataset.field === "shape") s.shape = target.value;
     else if (target.dataset.field === "releaseStops") s.releaseStops = (target as HTMLInputElement).checked;
     else if (target.dataset.color) s.colors[Number(target.dataset.color)] = target.value;

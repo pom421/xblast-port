@@ -2,6 +2,7 @@
 // browser client, with random inputs, and the server compares the state hashes
 // at the end of each round. Usage (server running):
 //   bun packages/server/test/bots.ts [bots=3] [url=ws://localhost:3001/ws]
+// The bots play as fast as the server answers: start it with MAX_RATE=100000.
 
 import { readFileSync } from "node:fs";
 import {
@@ -10,6 +11,7 @@ import {
   hashGame,
   parseLevel,
   teamOfSlot,
+  type ClientMessage,
   type LobbyPlayer,
   type MatchConfig,
   type NetAction,
@@ -32,7 +34,7 @@ function bot(index: number): Promise<string> {
     const frames = new Map<number, NetAction[]>();
     let rounds = 0;
     let desyncs = 0;
-    const send = (m: object) => socket.send(JSON.stringify(m));
+    const send = (m: ClientMessage) => socket.send(JSON.stringify(m));
     const rand = () => Math.random();
 
     function step(): void {

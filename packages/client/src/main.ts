@@ -10,6 +10,7 @@ import {
   levelInfo,
   parseLevel,
   teamOfSlot,
+  type ClientMessage,
   type Level,
   type LevelInfo,
   type LobbyPlayer,
@@ -476,10 +477,11 @@ function connectOnline(): void {
         showOverlay(`<h2>Error</h2><p>${escapeHtml(String(error))}</p><p>Escape: menu.</p>`);
       });
   });
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (e) => {
     if (match === online) {
       backToMenu();
-      showOverlay("<h2>Disconnected</h2><p>Escape: menu.</p>");
+      // the server says why it closes (e.g. the game is full of connections)
+      showOverlay(`<h2>Disconnected</h2><p>${escapeHtml(e.reason)}</p><p>Escape: menu.</p>`);
     }
   });
 }
@@ -487,7 +489,7 @@ function connectOnline(): void {
 function sendJoin(online: OnlineMatch): void {
   send(online, {
     type: "join",
-    players: online.locals.map(({ name, shape, colors }) => ({ name, shape, colors })),
+    players: online.locals.map(({ name, shape, colors }) => ({ name, look: { shape, colors } })),
   });
 }
 
@@ -495,7 +497,7 @@ function defaultServer(): string {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 }
 
-function send(online: OnlineMatch, message: object): void {
+function send(online: OnlineMatch, message: ClientMessage): void {
   if (online.socket.readyState === WebSocket.OPEN) online.socket.send(JSON.stringify(message));
 }
 
