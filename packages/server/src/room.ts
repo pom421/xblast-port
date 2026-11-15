@@ -5,6 +5,7 @@
 import {
   chooseLevel,
   idleAction,
+  INTRO_SECONDS,
   MAX_PLAYER,
   teamOfSlot,
   type ClientMessage,
@@ -19,9 +20,16 @@ import {
 /** frames between an input and its use: 3 × 50 ms */
 export const INPUT_DELAY = 3;
 
+/** seconds a round may wait for a client before anyone is told */
+export const STALL_GRACE = 5;
+/** seconds of the countdown that follows, before the client is removed from the match */
+export const STALL_TIMEOUT = 15;
+
 export interface Connection {
   readonly id: number;
   send(message: ServerMessage): void;
+  /** Closes the connection; the client shows the reason. */
+  close(reason: string): void;
 }
 
 interface OverReport {
@@ -48,6 +56,8 @@ export class Room {
   private round = 0;
   private inputs = new Map<number, (NetAction | null)[]>();
   private nextFrame = 1;
+  /** seconds since the last frame sent */
+  private waited = 0;
   private reports = new Map<number, OverReport>();
   private victories: number[] = [];
   private readonly levels: LevelChoice[];
@@ -67,7 +77,7 @@ export class Room {
   }
 
   disconnect(id: number): void {
-    this.clients.delete(id);
+    if (!this.clients.delete(id)) return;
     if (this.host === id) this.host = this.players.find((p) => p.client !== id)?.client ?? null;
     if (!this.playing) {
       this.players = this.players.filter((p) => p.client !== id).map((p, slot) => ({ ...p, slot }));
@@ -152,6 +162,8 @@ export class Room {
         this.players.map(() => idleAction()),
       );
     this.flush();
+    // no input comes during the level intro: it is not waiting
+    this.waited = -INTRO_SECONDS;
   }
 
   private input(id: number, round: number, frame: number, actions: NetAction[]): void {
@@ -191,7 +203,36 @@ export class Room {
       this.broadcast({ type: "frame", round: this.round, frame: this.nextFrame, actions });
       this.inputs.delete(this.nextFrame);
       this.nextFrame++;
+      this.waited = 0;
     }
+  }
+
+  /**
+   * To call every second. In lockstep one silent client (a hidden tab, a lost
+   * network) freezes the round of everyone: after a grace, everyone sees a
+   * countdown, then the clients waited for are removed and the round goes on.
+   */
+  second(): void {
+    if (!this.running) return;
+    const left = STALL_GRACE + STALL_TIMEOUT - ++this.waited;
+    if (left > STALL_TIMEOUT) return;
+    const late = this.late();
+    if (left > 0) return this.broadcast({ type: "stall", clients: late, seconds: left });
+    this.waited = 0;
+    for (const id of late) {
+      this.clients.get(id)?.close("Removed from the match: no answer from this computer.");
+      this.disconnect(id);
+    }
+  }
+
+  /** Clients the round waits for: their end report once a client sent one, else their inputs. */
+  private late(): number[] {
+    const row = this.inputs.get(this.nextFrame);
+    const ending = this.reports.size > 0;
+    const late = this.players.filter(
+      (p) => this.clients.has(p.client) && (ending ? !this.reports.has(p.client) : (row?.[p.slot] ?? null) === null),
+    );
+    return [...new Set(late.map((p) => p.client))];
   }
 
   /** Once every connected client has finished the round: result, then next round or end. */

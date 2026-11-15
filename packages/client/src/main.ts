@@ -4,6 +4,7 @@
 
 import {
   FRAME_RATE,
+  INTRO_SECONDS,
   chooseLevel,
   Game,
   hashGame,
@@ -40,9 +41,10 @@ import { loadFaces, loadStatus, SCOREH, StatusBar, type StatusAssets } from "./s
 import "./style.css";
 
 const FRAME_MS = 1000 / FRAME_RATE;
+const TITLE = document.title;
 const PRESS = "Press Space or Return";
 /* online, the server sets the pace: fixed times instead of waiting for Space */
-const INTRO_FRAMES = 3 * FRAME_RATE;
+const INTRO_FRAMES = INTRO_SECONDS * FRAME_RATE;
 const END_FRAMES = FRAME_RATE;
 
 /**
@@ -97,6 +99,8 @@ interface OnlineMatch {
   delay: number;
   /** inputs of every player, by frame, received from the server */
   frames: Map<number, NetAction[]>;
+  /** the round waits for a client: the countdown is shown */
+  stalled: boolean;
 }
 
 const $ = <T extends HTMLElement>(selector: string) => document.querySelector<T>(selector)!;
@@ -410,7 +414,8 @@ function tickLocal(): void {
 
 /** Plays the rest of the round at once, without display: same result as watching it. */
 function fastForward(): void {
-  if (!game || phase.kind !== "play") return;
+  // local only: online, playing ahead of the others would break the lockstep
+  if (!game || match?.mode !== "local" || phase.kind !== "play") return;
   while (!game.over) {
     game.turn();
     game.evalActions([]);
@@ -464,6 +469,7 @@ function connectOnline(): void {
     round: 0,
     delay: 3,
     frames: new Map(),
+    stalled: false,
   };
   match = online;
   phase = { kind: "lobby" };
@@ -555,9 +561,14 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       break;
     case "frame":
       if (online.watching && message.round === online.round) online.frames.set(message.frame, message.actions);
+      if (online.stalled) showStall(online, null);
+      break;
+    case "stall":
+      if (online.watching) showStall(online, message);
       break;
     case "result":
       if (!online.watching) break;
+      if (online.stalled) showStall(online, null);
       victories = message.victories;
       endRound(roundMessage(), game!.result().winnerTeam);
       if (message.desync) showBanner('<span class="error">Desynchronised game!</span>');
@@ -593,6 +604,24 @@ function tickOnline(online: OnlineMatch): void {
     sound?.stopMusic();
     phase = { kind: "waiting" };
   }
+}
+
+/**
+ * The round waits for some clients (null: no longer). Everyone sees who and
+ * for how long; the client waited for is told so, in the title of its tab too:
+ * a hidden tab is the usual reason, and shows nothing else.
+ */
+function showStall(online: OnlineMatch, stall: { clients: number[]; seconds: number } | null): void {
+  online.stalled = stall !== null;
+  const me = stall !== null && stall.clients.includes(online.client);
+  document.title = me ? `(${stall.seconds}) The game waits for you – ${TITLE}` : TITLE;
+  if (!stall) return showBanner(null);
+  const names = online.lobby.filter((p) => stall.clients.includes(p.client)).map((p) => escapeHtml(p.name));
+  showBanner(
+    me
+      ? `<span class="error">The game is waiting for you: out of the match in ${stall.seconds} s</span>`
+      : `Waiting for ${names.join(", ")}: out of the match in ${stall.seconds} s`,
+  );
 }
 
 function showLobby(online: OnlineMatch, error?: string, title = "Lobby"): void {
@@ -695,6 +724,7 @@ function backToMenu(): void {
     const online = match;
     match = null;
     online.socket.close();
+    document.title = TITLE;
   }
   match = null;
   game = null;

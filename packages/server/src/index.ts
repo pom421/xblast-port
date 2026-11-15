@@ -81,7 +81,11 @@ const server = Bun.serve<SocketData>({
     // a longer message closes the socket
     maxPayloadLength: MAX_MESSAGE_BYTES,
     open(ws) {
-      room.connect({ id: ws.data.id, send: (message) => ws.send(JSON.stringify(message)) });
+      room.connect({
+        id: ws.data.id,
+        send: (message) => ws.send(JSON.stringify(message)),
+        close: (reason) => ws.close(4000, reason),
+      });
     },
     message(ws, raw) {
       // a client of this game never sends anything else: no reason to keep the socket
@@ -96,5 +100,7 @@ const server = Bun.serve<SocketData>({
     },
   },
 });
+
+setInterval(() => room.second(), 1000);
 
 console.log(`XBlast server: ${server.url.href} (${levels.length} levels)`);
