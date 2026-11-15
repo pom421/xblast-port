@@ -1,31 +1,8 @@
 // Settings of the players of this computer: name, look (shape and colors of
 // the original player config) and keys. Kept in the browser (localStorage).
 
+import { MAX_NAME, PLAYER_SHAPES } from "@xblast/sim";
 import type { PlayerLook } from "./assets.ts";
-
-/** The 20 player shapes of XBlast (assets/image/sprite). */
-export const shapes = [
-  "normal",
-  "tall",
-  "girl",
-  "fat",
-  "cowboy",
-  "felix",
-  "golem",
-  "iceman",
-  "insect",
-  "jedi",
-  "kenny",
-  "mecha",
-  "ping",
-  "punk",
-  "skull",
-  "sticky",
-  "tutorial",
-  "wuschel",
-  "wusel",
-  "xmas",
-] as const;
 
 /** The 6 colors of a player, in the order of the sprite layers. */
 export const colorNames = ["Helmet", "Face", "Body", "Hands & feet", "Arms & legs", "Backpack"] as const;
@@ -118,8 +95,8 @@ export function loadSettings(): PlayerSettings[] {
     const s = Array.isArray(saved) ? (saved[i] as Partial<PlayerSettings> | undefined) : undefined;
     if (!s || typeof s !== "object") return structuredClone(def);
     return {
-      name: typeof s.name === "string" && s.name.trim() ? s.name.slice(0, 16) : def.name,
-      shape: (shapes as readonly string[]).includes(s.shape ?? "") ? s.shape! : def.shape,
+      name: typeof s.name === "string" && s.name.trim() ? s.name.slice(0, MAX_NAME) : def.name,
+      shape: (PLAYER_SHAPES as readonly string[]).includes(s.shape ?? "") ? s.shape! : def.shape,
       colors: def.colors.map((c, k) => (isColor(s.colors?.[k]) ? s.colors![k]! : c)) as PlayerLook["colors"],
       keys: Object.fromEntries(
         keyActions.map(([action]) => [

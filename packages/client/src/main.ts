@@ -10,6 +10,7 @@ import {
   levelInfo,
   parseLevel,
   teamOfSlot,
+  type ClientMessage,
   type Level,
   type LevelInfo,
   type LobbyPlayer,
@@ -90,6 +91,8 @@ interface OnlineMatch {
   lobby: LobbyPlayer[];
   host: number;
   playing: boolean;
+  /** this client got the players of the match being played: it shows its rounds */
+  watching: boolean;
   round: number;
   delay: number;
   /** inputs of every player, by frame, received from the server */
@@ -457,6 +460,7 @@ function connectOnline(): void {
     lobby: [],
     host: -1,
     playing: false,
+    watching: false,
     round: 0,
     delay: 3,
     frames: new Map(),
@@ -476,10 +480,11 @@ function connectOnline(): void {
         showOverlay(`<h2>Error</h2><p>${escapeHtml(String(error))}</p><p>Escape: menu.</p>`);
       });
   });
-  socket.addEventListener("close", () => {
+  socket.addEventListener("close", (e) => {
     if (match === online) {
       backToMenu();
-      showOverlay("<h2>Disconnected</h2><p>Escape: menu.</p>");
+      // the server says why it closes (e.g. the game is full of connections)
+      showOverlay(`<h2>Disconnected</h2><p>${escapeHtml(e.reason)}</p><p>Escape: menu.</p>`);
     }
   });
 }
@@ -487,7 +492,7 @@ function connectOnline(): void {
 function sendJoin(online: OnlineMatch): void {
   send(online, {
     type: "join",
-    players: online.locals.map(({ name, shape, colors }) => ({ name, shape, colors })),
+    players: online.locals.map(({ name, shape, colors }) => ({ name, look: { shape, colors } })),
   });
 }
 
@@ -495,7 +500,7 @@ function defaultServer(): string {
   return `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 }
 
-function send(online: OnlineMatch, message: object): void {
+function send(online: OnlineMatch, message: ClientMessage): void {
   if (online.socket.readyState === WebSocket.OPEN) online.socket.send(JSON.stringify(message));
 }
 
@@ -527,6 +532,7 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       if (phase.kind === "lobby") showLobby(online, message.message, online.title);
       break;
     case "match":
+      online.watching = true;
       phase = { kind: "waiting" };
       roster = {
         names: message.players.map((p) => p.name),
@@ -540,22 +546,26 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       await loadScene();
       break;
     case "round":
+      // arrived during a match: its rounds are not shown, the lobby says to wait
+      if (!online.watching) break;
       online.round = message.round;
       online.delay = message.delay;
       online.frames = new Map();
       await beginRound(message.level, message.seed);
       break;
     case "frame":
-      if (message.round === online.round) online.frames.set(message.frame, message.actions);
+      if (online.watching && message.round === online.round) online.frames.set(message.frame, message.actions);
       break;
     case "result":
+      if (!online.watching) break;
       victories = message.victories;
       endRound(roundMessage(), game!.result().winnerTeam);
       if (message.desync) showBanner('<span class="error">Desynchronised game!</span>');
       break;
     case "matchOver": {
-      victories = message.victories;
-      const slot = champion();
+      if (online.watching) victories = message.victories;
+      const slot = online.watching ? champion() : -1;
+      online.watching = false;
       online.title = slot < 0 ? "Match over" : `${teamName(teamOf(slot))} won the match!`;
       // the level end screen of the last round shows first
       if (phase.kind !== "end") {
@@ -573,11 +583,13 @@ function tickOnline(online: OnlineMatch): void {
   if (!actions) return; // lockstep: wait for the inputs of every player
   online.frames.delete(frame);
   const local = input.take().slice(0, mySlots(online).length).map(toNet);
-  send(online, { type: "input", round: online.round, frame: frame + online.delay, actions: local });
+  // without a player (the game was full), this client only watches: the server expects nothing from it
+  const plays = local.length > 0;
+  if (plays) send(online, { type: "input", round: online.round, frame: frame + online.delay, actions: local });
   playFrame(actions.map(toAction));
   if (game!.over) {
     const { winnerTeam } = game!.result();
-    send(online, { type: "over", round: online.round, frame, hash: hashGame(game!), winnerTeam });
+    if (plays) send(online, { type: "over", round: online.round, frame, hash: hashGame(game!), winnerTeam });
     sound?.stopMusic();
     phase = { kind: "waiting" };
   }

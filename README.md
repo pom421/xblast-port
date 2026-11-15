@@ -74,7 +74,12 @@ desynchronisation. In development, run `vp run @xblast/server#dev` next to
 `vp run dev` (Vite forwards `/ws` to the server).
 
 `bun packages/server/test/bots.ts [bots]` plays a whole match with headless bots
-against a running server.
+against a running server (started with `MAX_RATE=100000`: the bots play faster
+than the 60 messages per second a client is allowed).
+
+The server trusts no client: every message is checked against the protocol
+(`packages/server/src/protocol.ts`, with zod) and a socket that sends anything
+else is closed. The winner of a round is the one most clients report.
 
 ## Deploy (play over the Internet)
 

@@ -18,6 +18,36 @@ export interface MatchConfig {
   bots?: number;
 }
 
+/** The 20 player shapes of XBlast (assets/image/sprite). */
+export const PLAYER_SHAPES = [
+  "normal",
+  "tall",
+  "girl",
+  "fat",
+  "cowboy",
+  "felix",
+  "golem",
+  "iceman",
+  "insect",
+  "jedi",
+  "kenny",
+  "mecha",
+  "ping",
+  "punk",
+  "skull",
+  "sticky",
+  "tutorial",
+  "wuschel",
+  "wusel",
+  "xmas",
+] as const;
+
+/** Longest name of a player. */
+export const MAX_NAME = 16;
+/** Bounds of a match: lives of a player, victories to win. */
+export const MAX_LIVES = 9;
+export const MAX_WINS = 9;
+
 /** Look of a player: one of the 20 shapes and its 6 colors ("#rrggbb", helmet first). */
 export interface PlayerLookData {
   shape: string;
@@ -35,9 +65,15 @@ export interface LobbyPlayer {
   bot?: boolean;
 }
 
-/* client → server */
+/** A player of a "join" message; default look of its slot when the look is missing. */
+export interface JoinPlayer {
+  name: string;
+  look?: PlayerLookData;
+}
+
+/* client → server: checked by the server before any use (server/src/protocol.ts) */
 export type ClientMessage =
-  | { type: "join"; players: ({ name: string } & Partial<PlayerLookData>)[] }
+  | { type: "join"; players: JoinPlayer[] }
   | { type: "start"; config: MatchConfig }
   | { type: "input"; round: number; frame: number; actions: NetAction[] }
   | { type: "over"; round: number; frame: number; hash: number; winnerTeam: number | null };
