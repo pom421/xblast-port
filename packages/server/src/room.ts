@@ -113,7 +113,9 @@ export class Room {
     if (this.playing) return client.send({ type: "error", message: "A match is being played, wait for its end." });
     if (this.players.some((p) => p.client === id)) return client.send({ type: "error", message: "Already joined." });
     const wanted = joining.slice(0, MAX_PLAYER - this.players.length);
-    if (wanted.length === 0) return client.send({ type: "error", message: "The game is full (6 players)." });
+    if (wanted.length === 0) {
+      return client.send({ type: "error", message: `The game is full (${MAX_PLAYER} players).` });
+    }
     const slots = wanted.map(({ name, look }) => {
       const slot = this.players.length;
       this.players.push({ slot, name: name.trim() || "Player", client: id, look });
