@@ -12,6 +12,7 @@ import {
   type Keys,
   type PlayerSettings,
 } from "./settings.ts";
+import { escapeHtml } from "./ui.ts";
 
 export interface PlayerCards {
   /** shows the cards of the first `count` players */
@@ -26,17 +27,15 @@ export function playerCards(
 ): PlayerCards {
   let shown = -1;
 
-  const escape = (text: string) => text.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
-
   function cardHtml(s: PlayerSettings, i: number): string {
     return `<fieldset class="card" data-player="${i}">
       <legend>Player ${i + 1}</legend>
       <canvas class="preview" width="64" height="78" aria-label="Look of player ${i + 1}"></canvas>
       <div class="card-fields">
-        <label>Name <input data-field="name" maxlength="${MAX_NAME}" value="${escape(s.name)}" /></label>
+        <label>Name <input data-field="name" maxlength="${MAX_NAME}" value="${escapeHtml(s.name)}" /></label>
         <label>Shape <select data-field="shape">${PLAYER_SHAPES.map((shape) => `<option${shape === s.shape ? " selected" : ""}>${shape}</option>`).join("")}</select></label>
         <div class="colors">${colorNames.map((name, k) => `<input type="color" data-color="${k}" value="${s.colors[k]}" title="${name}" aria-label="${name}" />`).join("")}</div>
-        <div class="keys">${keyActions.map(([action, label]) => `<button type="button" data-key="${action}" title="Click, then press a key">${label} <kbd>${escape(keyLabel(s.keys[action]))}</kbd></button>`).join("")}</div>
+        <div class="keys">${keyActions.map(([action, label]) => `<button type="button" data-key="${action}" title="Click, then press a key">${label} <kbd>${escapeHtml(keyLabel(s.keys[action]))}</kbd></button>`).join("")}</div>
         <label><input type="checkbox" data-field="releaseStops"${s.releaseStops ? " checked" : ""} /> Releasing a direction stops</label>
         <button type="button" data-reset>Default settings</button>
       </div>
