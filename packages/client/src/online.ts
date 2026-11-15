@@ -129,7 +129,8 @@ async function onServer(online: OnlineMatch, message: ServerMessage): Promise<vo
       app.phase = { kind: "waiting" };
       app.roster = {
         names: message.players.map((p) => p.name),
-        looks: message.players.map((p) => ({ name: p.name, ...(p.look ?? defaultPlayers[p.slot]!) })),
+        // the name last: the default look of a slot comes with the name of its default player
+        looks: message.players.map((p) => ({ ...(p.look ?? defaultPlayers[p.slot]!), name: p.name })),
         bots: message.players.map((p) => !!p.bot),
         config: message.config,
       };
@@ -242,7 +243,7 @@ export function showLobby(online: OnlineMatch, error?: string): void {
     `<h2>${escapeHtml(online.title)}</h2><ol class="lobby">${players}</ol>` +
       (online.playing ? "<p>A match is being played.</p>" : hostForm) +
       (error ? `<p class="error">${escapeHtml(error)}</p>` : "") +
-      `<p class="small">Your keys: ${online.locals.map((s) => `${escapeHtml(s.name)}: ${keysText(s)}`).join(" — ")}. Escape: leave.</p>`,
+      `<p class="small">Your keys: ${online.locals.map((s) => escapeHtml(`${s.name}: ${keysText(s)}`)).join(" — ")}. Escape: leave.</p>`,
   );
   overlay.querySelector<HTMLFormElement>("#host-form")?.addEventListener("submit", (e) => {
     e.preventDefault();
