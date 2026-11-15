@@ -1,0 +1,6 @@
+# HTTPS in front of the game server: certificate from Let's Encrypt (or a local
+# one for "localhost"), and the WebSocket upgrade of /ws forwarded on its own.
+{$DOMAIN:localhost} {
+	encode gzip
+	reverse_proxy xblast:3001
+}

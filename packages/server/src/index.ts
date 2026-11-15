@@ -38,6 +38,9 @@ const server = Bun.serve<SocketData>({
     return (await staticFile(url.pathname)) ?? new Response("Not found", { status: 404 });
   },
   websocket: {
+    // Heartbeat: a socket silent for 20 s gets a ping (the browser answers on its own),
+    // so proxies that cut idle connections (often after 60 s) keep the lobby open.
+    idleTimeout: 20,
     open(ws) {
       room.connect({ id: ws.data.id, send: (message) => ws.send(JSON.stringify(message)) });
     },

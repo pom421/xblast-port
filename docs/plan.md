@@ -47,7 +47,7 @@ Règles clés : 2D, 6 joueurs max, équipes de 2, 2 vies, "shrink" en fin de tem
 3. Rendu + clavier local — **fait** (PR 3) : 2 à 4 joueurs, graphismes et sons d'origine décodés dans le navigateur
 4. Réseau 6 joueurs, équipes, vies, shrink — **fait** (PR 4) : lockstep via serveur Bun, salon, détection de désynchronisation
 5. Convertisseurs assets + niveaux — **remplacé** : fichiers d'origine servis tels quels, décodés côté client
-6. Polish — **en cours** : musique, bots (IA de `bot.c`), autres silhouettes de joueurs, configuration des touches, pause — faits ; écrans de l'original entre les manches (présentation du niveau, fin de manche, scores, vainqueur) — faits ; restent la barre d'état et l'intro animée de l'original, le déploiement
+6. Polish — **en cours** : musique, bots (IA de `bot.c`), autres silhouettes de joueurs, configuration des touches, pause — faits ; écrans de l'original entre les manches (présentation du niveau, fin de manche, scores, vainqueur) — faits ; barre d'état — faite ; image Docker de déploiement — faite ; restent l'intro animée de l'original et la mise en ligne (choix de l'hébergeur)
 
 ## Préférences de l'utilisateur
 
