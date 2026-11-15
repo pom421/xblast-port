@@ -52,19 +52,63 @@ decoded and recolored in the browser like the original did, with its sound
 effects (`assets/sounds`) and its 6 songs (`assets/music`, one per round; M
 turns the music off and on).
 
-## Play on a LAN (up to 6 players)
+## Play online (up to 6 players)
 
-One computer hosts the game: it serves the client and relays the inputs.
+There is **one server** and nothing to install for the players: the server
+hands out the web page and relays the game, and each player only opens that
+page in a browser. Nobody starts a "client" program.
 
-```bash
-vp run @xblast/client#build
-bun packages/server/src/index.ts   # PORT=3001 by default
+```
+browser of player 1 ─┐
+browser of player 2 ─┼─ http://<host>:3001 ── the server (one process, one game room)
+browser of player 3 ─┘
 ```
 
-Every player opens `http://<host address>:3001`, chooses **Online**, 1 or 2
-players on their computer, and connects. The first one to join hosts the match
-(lives, victories to win, computer players, teams of 2) and starts it.
-Computer players cost no network traffic: every client computes their inputs.
+### On a LAN
+
+One computer hosts the game, in one terminal:
+
+```bash
+vp install
+vp run @xblast/client#build   # the web page, once (and after each change)
+vp run @xblast/server#start   # the server, on port 3001 (PORT=… to change it)
+```
+
+Every player, the host included, opens `http://<host address>:3001`, then:
+
+1. chooses **Online (LAN)** at the top of the form (the default, **Local**, is a
+   match on that computer alone: it never reaches the server);
+2. chooses 1 or 2 players on their keyboard, leaves "Server" empty, and
+   clicks **Connect**;
+3. arrives in the **lobby**, which lists every player connected.
+
+The first one to connect hosts the match: only that player sees the form
+(lives, victories to win, computer players, teams of 2) and **Start the
+match**. Computer players cost no network traffic: every client computes their
+inputs.
+
+### Try it alone, with 2 players on one computer
+
+While working on the code, run the server and the page separately, in two
+terminals, to get hot reload:
+
+```bash
+vp run @xblast/server#dev   # terminal 1: the game server (port 3001)
+vp run dev                  # terminal 2: the page; open the URL Vite prints
+```
+
+Then open that URL in **two browser windows side by side** and follow the 3
+steps above in each. Good to know:
+
+- Both windows share the settings of the browser, so both players are called
+  "Olaf" and look the same: the lobby shows "Olaf (you)" and "Olaf". Rename
+  one in its player card, or use a private window for the second.
+- Use two windows, not two tabs of one window: a hidden tab stops playing (the
+  browser suspends it), the other one waits for it, and after 5 s the
+  countdown below starts.
+- Only the window that has the focus receives the keys: click a window to
+  play its player.
+- "Disconnected" right after Connect: the server of terminal 1 is not running.
 
 How it works: the simulation is deterministic, so clients only exchange their
 inputs (lockstep). Each input is used 3 frames (150 ms) after it is sent; the
@@ -72,9 +116,8 @@ server sends a frame to everyone once it has the inputs of every player, and
 compares a hash of the game state at the end of each round to detect a
 desynchronisation. A client that stays silent (a hidden tab, a lost network)
 freezes the round of everyone: after 5 s the others see a 15 s countdown, then
-the client is removed and its player stands still. In development, run
-`vp run @xblast/server#dev` next to `vp run dev` (Vite forwards `/ws` to the
-server).
+the client is removed and its player stands still. In development, Vite
+forwards `/ws` to the server of terminal 1.
 
 `bun packages/server/test/bots.ts [bots]` plays a whole match with headless bots
 against a running server (started with `MAX_RATE=100000`: the bots play faster
